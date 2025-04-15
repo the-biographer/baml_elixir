@@ -8,7 +8,7 @@ defmodule BamlElixir.MixProject do
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      aliases: aliases()
+      package: package()
     ]
   end
 
@@ -22,14 +22,23 @@ defmodule BamlElixir.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:rustler, "~> 0.36.1", runtime: false}
+      {:rustler, "~> 0.36.1", optional: true},
+      {:rustler_precompiled, "~> 0.8"}
     ]
   end
 
-  defp aliases do
+  defp package do
     [
-      # Add any custom mix aliases here
-      "baml.generate": ["compile", "baml.generate"]
+      files: [
+        "lib",
+        "native",
+        "checksum-*.exs",
+        "mix.exs",
+        "LICENSE"
+      ],
+      licenses: ["Apache-2.0"],
+      links: %{"GitHub" => "https://github.com/emilsoman/baml_elixir"},
+      maintainers: ["Emil Soman"]
     ]
   end
 end
