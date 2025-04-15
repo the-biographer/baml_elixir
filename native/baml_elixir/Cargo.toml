@@ -1,0 +1,15 @@
+[package]
+name = "baml_elixir"
+version = "0.1.0"
+authors = []
+edition = "2021"
+
+[lib]
+name = "baml_elixir"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.36.1"
+baml-cli = { path = "../baml/engine/cli" }
+baml-runtime = { path = "../baml/engine/baml-runtime" }
+baml-types = { path = "../baml/engine/baml-lib/baml-types" }
