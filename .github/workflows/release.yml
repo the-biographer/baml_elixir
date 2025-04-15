@@ -23,6 +23,12 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Extract crate information
+        shell: bash
+        run: |
+          # Get the project version from mix.exs
+          echo "PROJECT_VERSION=$(sed -n 's/^  @version "\(.*\)"/\1/p' mix.exs | head -n1)" >> $GITHUB_ENV
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -35,7 +41,7 @@ jobs:
           nif-version: ${{ matrix.nif }}
           project-dir: "native/baml_elixir"
           project-name: baml_elixir
-          project-version: ${{ github.ref_name }}
+          project-version: ${{ env.PROJECT_VERSION }}
           target: ${{ matrix.job.target }}
           use-cross: ${{ matrix.job.use-cross }}
 
