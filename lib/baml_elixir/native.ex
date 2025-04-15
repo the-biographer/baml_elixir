@@ -5,7 +5,11 @@ defmodule BamlElixir.Native do
     otp_app: :baml_elixir,
     base_url: "https://github.com/emilsoman/baml_elixir/releases/download/v#{version}/",
     force_build: System.get_env("BAML_ELIXIR_BUILD") in ["1", "true"],
-    version: version
+    version: version,
+    targets: [
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-gnu"
+    ]
 
   def call(_client, _function_name, _args), do: :erlang.nif_error(:nif_not_loaded)
 end
