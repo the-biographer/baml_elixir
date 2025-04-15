@@ -1,4 +1,4 @@
-[submodule "native/baml"]
-	path = native/baml
+[submodule "native/baml_elixir/baml"]
+	path = native/baml_elixir/baml
 	url = https://github.com/BoundaryML/baml.git
 	branch = canary
