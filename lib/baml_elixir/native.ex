@@ -3,7 +3,7 @@ defmodule BamlElixir.Native do
 
   use RustlerPrecompiled,
     otp_app: :baml_elixir,
-    base_url: "https://github.com/emilsoman/baml-elixir/releases/download/v#{version}/",
+    base_url: "https://github.com/emilsoman/baml-elixir/releases/download/#{version}/",
     force_build: System.get_env("BAML_ELIXIR_BUILD") in ["1", "true"],
     version: version
 
