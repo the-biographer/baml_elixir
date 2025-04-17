@@ -97,8 +97,19 @@ fn baml_value_to_term<'a>(env: Env<'a>, value: &BamlValue, client: &Client) -> N
             Ok(result_map)
         }
         BamlValue::Class(class_name, fields) => {
-            // Create an Elixir struct for the class using the client's namespace
-            let module_name = format!("Elixir.{}.{}", client.namespace, class_name);
+            // Create an Elixir struct for the class using the client's namespace and struct_name
+            let struct_or_class = if client.struct_name.is_empty() {
+                class_name
+            } else {
+                &client.struct_name
+            };
+
+            let module_name = if !client.namespace.is_empty() {
+                format!("Elixir.{}.{}", client.namespace, struct_or_class)
+            } else {
+                format!("Elixir.{}", struct_or_class)
+            };
+
             let mut struct_term = elixir_struct::make_ex_struct(env, &module_name)
                 .map_err(|_| Error::Term(Box::new("Failed to create struct")))?;
             // Add all fields
@@ -116,6 +127,7 @@ fn baml_value_to_term<'a>(env: Env<'a>, value: &BamlValue, client: &Client) -> N
 #[module = "BamlElixir.Client"]
 struct Client {
     namespace: String,
+    struct_name: String,
     from: String,
 }
 
