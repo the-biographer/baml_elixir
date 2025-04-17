@@ -52,11 +52,11 @@ function ExtractResume(resume: string) -> Resume {
 }
 ```
 
-Now create a module for Resume:
+Now create a module for Resume in your Elixir code:
 
 ```elixir
-defmodule MyApp.BamlClient.Resume do
-    defstruct [:name, :job_title, :company]
+defmodule MyApp.Resume do
+  defstruct [:name, :job_title, :company]
 end
 ```
 
@@ -64,10 +64,30 @@ Now call the BAML function:
 
 ```elixir
 # from: The path to the baml_src directory.
-# namespace: The module name under which the returned structs will be nested.
 # struct_name: The module name which will be used for the returned struct.
-%BamlElixir.Client{from: "priv/baml_src", namespace: "MyApp.BamlClient", struct_name: MyResumeStruct}
-|> BamlElixir.Native.call(c, "ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."})
+%BamlElixir.Client{from: "priv/baml_src", struct_name: MyApp.Resume}
+|> BamlElixir.Client.call("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."})
+```
+
+It's a good idea to create your own client module in your project like this:
+
+```elixir
+defmodule MyApp.BamlClient do
+  def call(name, args, struct_name \\ nil) do
+    client = %BamlElixir.Client{
+      from: Application.get_env(:my_app, :baml_src_path),
+      struct_name: struct_name
+    }
+
+    BamlElixir.call(client, name, args)
+  end
+end
+```
+
+and call it like this:
+
+```elixir
+MyApp.BamlClient.call("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."}, MyApp.Resume)
 ```
 
 ## Installation
@@ -77,7 +97,7 @@ Add baml_elixir to your mix.exs:
 ```elixir
 def deps do
   [
-    {:baml_elixir, "~> 0.1.0"}
+    {:baml_elixir, "~> 0.2.0"}
   ]
 end
 ```
