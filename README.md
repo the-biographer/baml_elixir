@@ -102,6 +102,13 @@ def deps do
 end
 ```
 
+This also downloads the pre built NIFs for these targets:
+
+- aarch64-apple-darwin (Apple Silicon)
+- x86_64-unknown-linux-gnu
+
+If you need to build the NIFs for other targets, you need to clone the repo and build it locally as documented below.
+
 ### Development
 
 This project includes Git submodules. To clone the repository with all its submodules, use:
@@ -131,9 +138,3 @@ The project includes Rust code in the `native/` directory:
 mix deps.get
 mix compile
 ```
-
-## Documentation
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/baml_elixir>.
