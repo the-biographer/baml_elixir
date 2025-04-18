@@ -17,10 +17,7 @@ defmodule BamlElixir.Client do
       Enum.each(stream, fn result -> IO.inspect(result) end)
   """
 
-  defstruct [
-    :struct_name,
-    from: "baml_src"
-  ]
+  defstruct from: "baml_src"
 
   @doc """
   Calls a BAML function synchronously.
@@ -39,8 +36,6 @@ defmodule BamlElixir.Client do
   """
   @spec call(%__MODULE__{}, String.t(), map()) :: {:ok, term()} | {:error, String.t()}
   def call(%__MODULE__{} = client, function_name, args) do
-    client = %__MODULE__{client | struct_name: struct_name(client.struct_name)}
-
     BamlElixir.Native.call(client, function_name, args)
   end
 
@@ -78,15 +73,5 @@ defmodule BamlElixir.Client do
       end,
       fn _ -> :ok end
     )
-  end
-
-  defp struct_name(struct_name) do
-    if struct_name do
-      struct_name
-      |> Module.split()
-      |> Enum.join(".")
-    else
-      ""
-    end
   end
 end

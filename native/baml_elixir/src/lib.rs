@@ -1,7 +1,5 @@
 use baml_runtime::{BamlRuntime, FunctionResult, RuntimeContextManager};
 use baml_types::{BamlMap, BamlValue};
-use rustler::types::atom::Atom;
-use rustler::types::elixir_struct;
 use rustler::{Encoder, Env, Error, LocalPid, MapIterator, NifResult, NifStruct, Term};
 use std::path::Path;
 
@@ -77,7 +75,7 @@ fn baml_value_to_term<'a>(env: Env<'a>, value: &BamlValue, client: &Client) -> N
                 .collect();
             Ok(terms?.encode(env))
         }
-        BamlValue::Map(map) => {
+        BamlValue::Map(map) | BamlValue::Class(_, map) => {
             let mut result_map = Term::map_new(env);
             for (key, value) in map.iter() {
                 let value_term = baml_value_to_term(env, value, client)?;
@@ -102,38 +100,12 @@ fn baml_value_to_term<'a>(env: Env<'a>, value: &BamlValue, client: &Client) -> N
                 .map_err(|_| Error::Term(Box::new("Failed to add enum variant")))?;
             Ok(result_map)
         }
-        BamlValue::Class(class_name, fields) => {
-            // Create an Elixir struct for the class using struct_name
-            let struct_or_class = if client.struct_name.is_empty() {
-                class_name
-            } else {
-                &client.struct_name
-            };
-
-            let module_name = format!("Elixir.{}", struct_or_class);
-
-            let mut struct_term = elixir_struct::make_ex_struct(env, &module_name)
-                .map_err(|_| Error::Term(Box::new("Failed to create struct")))?;
-            // Add all fields
-            for (key, value) in fields.iter() {
-                let value_term = baml_value_to_term(env, value, client)?;
-                struct_term = struct_term
-                    .map_put(
-                        Atom::from_str(env, key)
-                            .map_err(|_| Error::Term(Box::new("Failed to create atom")))?,
-                        value_term,
-                    )
-                    .map_err(|_| Error::Term(Box::new("Failed to add field to struct")))?;
-            }
-            Ok(struct_term)
-        }
     }
 }
 
 #[derive(Debug, NifStruct)]
 #[module = "BamlElixir.Client"]
 struct Client {
-    struct_name: String,
     from: String,
 }
 
