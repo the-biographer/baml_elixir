@@ -7,7 +7,6 @@ What this library does:
 
 - Call functions in BAML files.
 - Make use of the BAML LLM client to call LLM functions.
-- Cast the return values from BAML function calls to the correct structs in Elixir.
 
 What this library does not do:
 
@@ -64,19 +63,27 @@ Now call the BAML function:
 
 ```elixir
 # from: The path to the baml_src directory.
-# struct_name: The module name which will be used for the returned struct.
-%BamlElixir.Client{from: "priv/baml_src", struct_name: MyApp.Resume}
+%BamlElixir.Client{from: "priv/baml_src"}
 |> BamlElixir.Client.call("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."})
 ```
+
+### Stream results
+
+```elixir
+%BamlElixir.Client{from: "priv/baml_src"}
+|> BamlElixir.Client.stream!("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."})
+|> Enum.each(&IO.inspect/1)
+```
+
+### Create your own client module
 
 It's a good idea to create your own client module in your project like this:
 
 ```elixir
 defmodule MyApp.BamlClient do
-  def call(name, args, struct_name \\ nil) do
+  def call(name, args) do
     client = %BamlElixir.Client{
       from: Application.get_env(:my_app, :baml_src_path),
-      struct_name: struct_name
     }
 
     BamlElixir.call(client, name, args)
@@ -87,7 +94,7 @@ end
 and call it like this:
 
 ```elixir
-MyApp.BamlClient.call("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."}, MyApp.Resume)
+MyApp.BamlClient.call("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."})
 ```
 
 ## Installation
