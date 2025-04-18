@@ -1,4 +1,4 @@
-use rustler::{Env, NifResult, Term, Encoder, Error, MapIterator, NifStruct};
+use rustler::{Env, NifResult, Term, Encoder, Error, MapIterator, NifStruct, LocalPid};
 use rustler::types::elixir_struct;
 use baml_runtime::BamlRuntime;
 use baml_types::{BamlMap, BamlValue};
@@ -97,18 +97,14 @@ fn baml_value_to_term<'a>(env: Env<'a>, value: &BamlValue, client: &Client) -> N
             Ok(result_map)
         }
         BamlValue::Class(class_name, fields) => {
-            // Create an Elixir struct for the class using the client's namespace and struct_name
+            // Create an Elixir struct for the class using struct_name
             let struct_or_class = if client.struct_name.is_empty() {
                 class_name
             } else {
                 &client.struct_name
             };
 
-            let module_name = if !client.namespace.is_empty() {
-                format!("Elixir.{}.{}", client.namespace, struct_or_class)
-            } else {
-                format!("Elixir.{}", struct_or_class)
-            };
+            let module_name = format!("Elixir.{}", struct_or_class);
 
             let mut struct_term = elixir_struct::make_ex_struct(env, &module_name)
                 .map_err(|_| Error::Term(Box::new("Failed to create struct")))?;
@@ -126,7 +122,7 @@ fn baml_value_to_term<'a>(env: Env<'a>, value: &BamlValue, client: &Client) -> N
 #[derive(Debug, NifStruct)]
 #[module = "BamlElixir.Client"]
 struct Client {
-    namespace: String,
+    stream: bool,
     struct_name: String,
     from: String,
 }
@@ -204,6 +200,13 @@ fn call<'a>(env: Env<'a>, client: Term<'a>, function_name: String, args: Term<'a
             Ok((atoms::error(), format!("{:?}", e)).encode(env))
         }
     }
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+fn stream<'a>(env: Env<'a>, _client: Term<'a>, pid: Term<'a>, _function_name: String, _args: Term<'a>) -> NifResult<Term<'a>> {
+    let pid = pid.decode::<LocalPid>()?;
+    let _ = env.send(&pid, atoms::ok().encode(env));
+    Ok(atoms::ok().encode(env))
 }
 
 rustler::init!("Elixir.BamlElixir.Native");

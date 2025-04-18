@@ -12,4 +12,6 @@ defmodule BamlElixir.Native do
     ]
 
   def call(_client, _function_name, _args), do: :erlang.nif_error(:nif_not_loaded)
+
+  def stream(_client, _pid, _function_name, _args), do: :erlang.nif_error(:nif_not_loaded)
 end

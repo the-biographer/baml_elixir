@@ -1,16 +1,34 @@
 defmodule BamlElixir.Client do
-  defstruct namespace: nil,
-            from: "baml_src",
-            struct_name: nil
+  defstruct [
+    :struct_name,
+    from: "baml_src",
+    stream: true
+  ]
 
-  def call(client, function_name, args) do
-    client = %{
+  def call(%__MODULE__{} = client, function_name, args) do
+    client = %__MODULE__{
       client
-      | namespace: client.namespace || "",
-        struct_name: struct_name(client.struct_name)
+      | struct_name: struct_name(client.struct_name)
     }
 
-    BamlElixir.Native.call(client, function_name, args)
+    if client.stream do
+      do_stream(client, function_name, args)
+    else
+      BamlElixir.Native.call(client, function_name, args)
+    end
+  end
+
+  defp do_stream(client, function_name, args) do
+    pid = self()
+
+    spawn_link(fn ->
+      BamlElixir.Native.stream(client, pid, function_name, args)
+    end)
+
+    receive do
+      x ->
+        IO.inspect(x, label: "stream")
+    end
   end
 
   defp struct_name(struct_name) do
