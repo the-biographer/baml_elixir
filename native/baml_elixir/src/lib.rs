@@ -1,8 +1,12 @@
+use baml_runtime::tracingv2::storage::storage::Collector;
 use baml_runtime::{BamlRuntime, FunctionResult, RuntimeContextManager};
 use baml_types::{BamlMap, BamlValue};
-use rustler::{Encoder, Env, Error, LocalPid, MapIterator, NifResult, NifStruct, Term};
+use collector::Usage;
+use rustler::{
+    Encoder, Env, Error, LocalPid, MapIterator, NifResult, NifStruct, ResourceArc, Term,
+};
 use std::path::Path;
-
+use std::sync::Arc;
 mod atoms {
     rustler::atoms! {
         ok,
@@ -11,6 +15,8 @@ mod atoms {
         done,
     }
 }
+
+mod collector;
 
 fn term_to_string(term: Term) -> Result<String, Error> {
     if term.is_atom() {
@@ -103,10 +109,11 @@ fn baml_value_to_term<'a>(env: Env<'a>, value: &BamlValue, client: &Client) -> N
     }
 }
 
-#[derive(Debug, NifStruct)]
+#[derive(NifStruct)]
 #[module = "BamlElixir.Client"]
 struct Client {
     from: String,
+    collectors: Vec<ResourceArc<collector::CollectorResource>>,
 }
 
 fn prepare_runtime_and_params<'a>(
@@ -118,6 +125,7 @@ fn prepare_runtime_and_params<'a>(
         BamlRuntime,
         BamlMap<String, BamlValue>,
         RuntimeContextManager,
+        Option<Vec<Arc<Collector>>>,
     ),
     Error,
 > {
@@ -158,7 +166,9 @@ fn prepare_runtime_and_params<'a>(
         None, // baml source reader
     );
 
-    Ok((client, runtime, params, ctx))
+    let collectors = Some(client.collectors.iter().map(|c| c.inner.clone()).collect());
+
+    Ok((client, runtime, params, ctx, collectors))
 }
 
 fn parse_function_result<'a>(
@@ -184,8 +194,11 @@ fn call<'a>(
     client: Term<'a>,
     function_name: String,
     args: Term<'a>,
+    // collectors: Term<'a>,
 ) -> NifResult<Term<'a>> {
-    let (client, runtime, params, ctx) = prepare_runtime_and_params(client, args)?;
+    let (client, runtime, params, ctx, _collectors_1) = prepare_runtime_and_params(client, args)?;
+
+    let collectors = Some(client.collectors.iter().map(|c| c.inner.clone()).collect());
 
     // Call function synchronously
     let (result, _trace_id) = runtime.call_function_sync(
@@ -194,7 +207,7 @@ fn call<'a>(
         &ctx,
         None, // type builder (optional)
         None, // client registry (optional)
-        None, // collectors (optional)
+        collectors,
     );
 
     // Handle result
@@ -213,14 +226,14 @@ fn stream<'a>(
     args: Term<'a>,
 ) -> NifResult<Term<'a>> {
     let pid = pid.decode::<LocalPid>()?;
-    let (client, runtime, params, ctx) = prepare_runtime_and_params(client, args)?;
+    let (client, runtime, params, ctx, collectors) = prepare_runtime_and_params(client, args)?;
 
     let on_event = |r: FunctionResult| {
         let result_term = parse_function_result(env, r, &client).unwrap();
         let _ = env.send(&pid, result_term);
     };
 
-    let result = runtime.stream_function(function_name, &params, &ctx, None, None, None);
+    let result = runtime.stream_function(function_name, &params, &ctx, None, None, collectors);
 
     match result {
         Ok(mut stream) => {
@@ -232,6 +245,16 @@ fn stream<'a>(
         }
         Err(e) => Ok((atoms::error(), format!("{:?}", e)).encode(env)),
     }
+}
+
+#[rustler::nif]
+fn collector_new(name: Option<String>) -> ResourceArc<collector::CollectorResource> {
+    collector::CollectorResource::new(name)
+}
+
+#[rustler::nif]
+fn collector_usage(collector: ResourceArc<collector::CollectorResource>) -> Usage {
+    collector.usage()
 }
 
 rustler::init!("Elixir.BamlElixir.Native");

@@ -51,50 +51,37 @@ function ExtractResume(resume: string) -> Resume {
 }
 ```
 
-Now create a module for Resume in your Elixir code:
-
-```elixir
-defmodule MyApp.Resume do
-  defstruct [:name, :job_title, :company]
-end
-```
-
 Now call the BAML function:
 
 ```elixir
 # from: The path to the baml_src directory.
-%BamlElixir.Client{from: "priv/baml_src"}
-|> BamlElixir.Client.call("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."})
+alias BamlElixir.Client
+
+Client.new()
+|> Client.from("priv/baml_src")
+|> Client.call("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."})
 ```
 
 ### Stream results
 
 ```elixir
-%BamlElixir.Client{from: "priv/baml_src"}
-|> BamlElixir.Client.stream!("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."})
+Client.new()
+|> Client.from("priv/baml_src")
+|> Client.stream!("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."})
 |> Enum.each(&IO.inspect/1)
 ```
 
-### Create your own client module
-
-It's a good idea to create your own client module in your project like this:
+### Collect usage
 
 ```elixir
-defmodule MyApp.BamlClient do
-  def call(name, args) do
-    client = %BamlElixir.Client{
-      from: Application.get_env(:my_app, :baml_src_path),
-    }
+collector = BamlElixir.Collector.new("my_collector")
 
-    BamlElixir.call(client, name, args)
-  end
-end
-```
+Client.new()
+|> Client.from("priv/baml_src")
+|> Client.add_collector(collector)
+|> Client.call("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."})
 
-and call it like this:
-
-```elixir
-MyApp.BamlClient.call("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."})
+collector.usage()
 ```
 
 ## Installation
@@ -104,7 +91,7 @@ Add baml_elixir to your mix.exs:
 ```elixir
 def deps do
   [
-    {:baml_elixir, "~> 0.2.0"}
+    {:baml_elixir, "~> 1.0.0-pre.2"}
   ]
 end
 ```
@@ -134,7 +121,7 @@ git submodule update
 The project includes Rust code in the `native/` directory:
 
 - `native/baml_elixir/` - Main Rust NIF code
-- `native/baml/` - Submodule containing baml which is a dependency of the NIF
+- `native/baml_elixir/baml/` - Submodule containing baml which is a dependency of the NIF
 
 ### Building
 

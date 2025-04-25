@@ -17,7 +17,23 @@ defmodule BamlElixir.Client do
       Enum.each(stream, fn result -> IO.inspect(result) end)
   """
 
-  defstruct from: "baml_src"
+  defstruct from: "baml_src", collectors: []
+
+  def new do
+    %__MODULE__{}
+  end
+
+  def from(client = %__MODULE__{}, path) do
+    %{client | from: path}
+  end
+
+  def add_collector(
+        client = %__MODULE__{},
+        %BamlElixir.Collector{reference: reference}
+      )
+      when is_reference(reference) do
+    %{client | collectors: [reference | client.collectors]}
+  end
 
   @doc """
   Calls a BAML function synchronously.
