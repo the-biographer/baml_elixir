@@ -71,7 +71,31 @@ Client.new()
 |> Enum.each(&IO.inspect/1)
 ```
 
-### Collect usage
+### Images
+
+Send an image URL:
+
+```elixir
+BamlElixir.Client.new()
+|> BamlElixir.Client.from("priv/baml_src")
+|> BamlElixir.Client.call("DescribeImage", %{
+  myImg: %{
+    "url" => "https://upload.wikimedia.org/wikipedia/en/4/4d/Shrek_%28character%29.png"
+  }
+})
+```
+
+Or send base64 encoded image data:
+
+````elixir
+BamlElixir.Client.new()
+|> BamlElixir.Client.from("priv/baml_src")
+|> BamlElixir.Client.call("DescribeImage", %{
+  myImg: %{
+    "base64" => "data:image/png;base64,..."
+  }
+})
+### Collect usage data
 
 ```elixir
 collector = BamlElixir.Collector.new("my_collector")
@@ -82,7 +106,7 @@ Client.new()
 |> Client.call("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."})
 
 collector.usage()
-```
+````
 
 ## Installation
 
