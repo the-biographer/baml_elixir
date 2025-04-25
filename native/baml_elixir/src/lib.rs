@@ -1,3 +1,4 @@
+use baml_runtime::client_registry::ClientRegistry;
 use baml_runtime::tracingv2::storage::storage::Collector;
 use baml_runtime::{BamlRuntime, FunctionResult, RuntimeContextManager};
 use baml_types::{BamlMap, BamlValue};
@@ -111,20 +112,22 @@ fn baml_value_to_term<'a>(env: Env<'a>, value: &BamlValue, client: &Client) -> N
 
 #[derive(NifStruct)]
 #[module = "BamlElixir.Client"]
-struct Client {
+struct Client<'a> {
     from: String,
+    client_registry: Term<'a>,
     collectors: Vec<ResourceArc<collector::CollectorResource>>,
 }
 
-fn prepare_runtime_and_params<'a>(
+fn prepare_request<'a>(
     client: Term<'a>,
     args: Term<'a>,
 ) -> Result<
     (
-        Client,
+        Client<'a>,
         BamlRuntime,
         BamlMap<String, BamlValue>,
         RuntimeContextManager,
+        Option<ClientRegistry>,
         Option<Vec<Arc<Collector>>>,
     ),
     Error,
@@ -168,7 +171,30 @@ fn prepare_runtime_and_params<'a>(
 
     let collectors = Some(client.collectors.iter().map(|c| c.inner.clone()).collect());
 
-    Ok((client, runtime, params, ctx, collectors))
+    // Handle client registry
+    let client_registry = if client.client_registry.is_atom()
+        && client.client_registry.decode::<rustler::Atom>()? == atoms::nil()
+    {
+        None
+    } else if client.client_registry.is_map() {
+        let mut registry = ClientRegistry::new();
+        let iter = MapIterator::new(client.client_registry)
+            .ok_or(Error::Term(Box::new("Invalid registry map")))?;
+        for (key_term, value_term) in iter {
+            let key = term_to_string(key_term)?;
+            if key == "primary" {
+                let primary = term_to_string(value_term)?;
+                registry.set_primary(primary);
+            }
+        }
+        Some(registry)
+    } else {
+        return Err(Error::Term(Box::new(
+            "Client registry must be nil or a map",
+        )));
+    };
+
+    Ok((client, runtime, params, ctx, client_registry, collectors))
 }
 
 fn parse_function_result<'a>(
@@ -194,19 +220,17 @@ fn call<'a>(
     client: Term<'a>,
     function_name: String,
     args: Term<'a>,
-    // collectors: Term<'a>,
 ) -> NifResult<Term<'a>> {
-    let (client, runtime, params, ctx, _collectors_1) = prepare_runtime_and_params(client, args)?;
-
-    let collectors = Some(client.collectors.iter().map(|c| c.inner.clone()).collect());
+    let (client, runtime, params, ctx, client_registry, collectors) =
+        prepare_request(client, args)?;
 
     // Call function synchronously
     let (result, _trace_id) = runtime.call_function_sync(
         function_name,
         &params,
         &ctx,
-        None, // type builder (optional)
-        None, // client registry (optional)
+        None,                     // type builder (optional)
+        client_registry.as_ref(), // client registry (optional)
         collectors,
     );
 
@@ -226,14 +250,22 @@ fn stream<'a>(
     args: Term<'a>,
 ) -> NifResult<Term<'a>> {
     let pid = pid.decode::<LocalPid>()?;
-    let (client, runtime, params, ctx, collectors) = prepare_runtime_and_params(client, args)?;
+    let (client, runtime, params, ctx, client_registry, collectors) =
+        prepare_request(client, args)?;
 
     let on_event = |r: FunctionResult| {
         let result_term = parse_function_result(env, r, &client).unwrap();
         let _ = env.send(&pid, result_term);
     };
 
-    let result = runtime.stream_function(function_name, &params, &ctx, None, None, collectors);
+    let result = runtime.stream_function(
+        function_name,
+        &params,
+        &ctx,
+        None,
+        client_registry.as_ref(),
+        collectors,
+    );
 
     match result {
         Ok(mut stream) => {

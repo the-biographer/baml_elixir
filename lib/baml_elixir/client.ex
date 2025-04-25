@@ -17,7 +17,11 @@ defmodule BamlElixir.Client do
       Enum.each(stream, fn result -> IO.inspect(result) end)
   """
 
-  defstruct from: "baml_src", collectors: []
+  defstruct [
+    :client_registry,
+    from: "baml_src",
+    collectors: []
+  ]
 
   def new do
     %__MODULE__{}
@@ -33,6 +37,10 @@ defmodule BamlElixir.Client do
       )
       when is_reference(reference) do
     %{client | collectors: [reference | client.collectors]}
+  end
+
+  def use_llm_client(client = %__MODULE__{}, name) do
+    %{client | client_registry: %{primary: name}}
   end
 
   @doc """

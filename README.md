@@ -108,6 +108,28 @@ Client.new()
 collector.usage()
 ````
 
+### Switch LLM clients
+
+From the existing list of LLM clients, you can switch to a different one by calling `Client.use_llm_client/2`.
+
+```elixir
+client =
+Client.new()
+|> Client.from("priv/baml_src")
+
+client
+|> Client.use_llm_client("GPT4oMini")
+|> Client.call("WhichModel", %{})
+|> IO.inspect()
+# => "gpt-4o-mini"
+
+client
+|> Client.use_llm_client("DeepSeekR1")
+|> Client.call("WhichModel", %{})
+|> IO.inspect()
+# => "deepseek-r1"
+```
+
 ## Installation
 
 Add baml_elixir to your mix.exs:
