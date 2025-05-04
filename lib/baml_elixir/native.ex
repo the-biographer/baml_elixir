@@ -18,4 +18,6 @@ defmodule BamlElixir.Native do
   def collector_new(_name), do: :erlang.nif_error(:nif_not_loaded)
 
   def collector_usage(_collector), do: :erlang.nif_error(:nif_not_loaded)
+
+  def parse_baml(_path), do: :erlang.nif_error(:nif_not_loaded)
 end

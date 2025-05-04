@@ -6,6 +6,7 @@ use collector::Usage;
 use rustler::{
     Encoder, Env, Error, LocalPid, MapIterator, NifResult, NifStruct, ResourceArc, Term,
 };
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 mod atoms {
@@ -308,6 +309,69 @@ fn collector_new(name: Option<String>) -> ResourceArc<collector::CollectorResour
 #[rustler::nif]
 fn collector_usage(collector: ResourceArc<collector::CollectorResource>) -> Usage {
     collector.usage()
+}
+
+#[rustler::nif]
+fn parse_baml(env: Env, path: Option<String>) -> NifResult<Term> {
+    let path = path.unwrap_or_else(|| "baml_src".to_string());
+
+    // Create runtime
+    let runtime = match BamlRuntime::from_directory(&Path::new(&path), std::env::vars().collect()) {
+        Ok(r) => r,
+        Err(e) => return Err(Error::Term(Box::new(e.to_string()))),
+    };
+
+    let ir = runtime.inner.ir;
+
+    // Create a map of the classes and their fields along with their types
+    let mut class_fields = HashMap::new();
+    for class in ir.walk_classes() {
+        let mut fields = HashMap::new();
+        for field in class.walk_fields() {
+            fields.insert(field.name().to_string(), field.r#type().to_string());
+        }
+        class_fields.insert(class.name().to_string(), fields);
+    }
+
+    // Create a map of the enums and their variants
+    let mut enum_variants = HashMap::new();
+    for r#enum in ir.walk_enums() {
+        let mut variants = Vec::new();
+        for variant in r#enum.walk_values() {
+            variants.push(variant.name().to_string());
+        }
+        enum_variants.insert(r#enum.name().to_string(), variants);
+    }
+
+    // convert to elixir map term
+    let mut map = Term::map_new(env);
+
+    // Add classes
+    let mut classes_map = Term::map_new(env);
+    for (class_name, fields) in class_fields {
+        let mut field_map = Term::map_new(env);
+        for (field_name, field_type) in fields {
+            field_map = field_map.map_put(field_name.encode(env), field_type.encode(env))?;
+        }
+        classes_map = classes_map.map_put(class_name.encode(env), field_map)?;
+    }
+    map = map.map_put(
+        rustler::Atom::from_str(env, "classes").unwrap().encode(env),
+        classes_map,
+    )?;
+
+    // Add enums
+    let mut enums_map = Term::map_new(env);
+    for (enum_name, variants) in enum_variants {
+        let variants_list = variants.encode(env);
+        enums_map = enums_map.map_put(enum_name.encode(env), variants_list)?;
+    }
+    map = map.map_put(
+        rustler::Atom::from_str(env, "enums").unwrap().encode(env),
+        enums_map,
+    )?;
+
+    Ok(map)
 }
 
 rustler::init!("Elixir.BamlElixir.Native");

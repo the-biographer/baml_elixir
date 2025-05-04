@@ -23,6 +23,53 @@ defmodule BamlElixir.Client do
     collectors: []
   ]
 
+  defmacro __using__(opts) do
+    path = Keyword.get(opts, :path, "baml_src")
+
+    quote do
+      import BamlElixir.Client
+
+      # Get BAML types
+      baml_types = BamlElixir.Native.parse_baml(unquote(path))
+      baml_class_types = baml_types[:classes]
+
+      # Generate structs for each BAML class type
+      for {type_name, fields} <- baml_class_types do
+        # Get field names for struct definition
+        field_names =
+          for {field_name, _} <- fields do
+            String.to_atom(field_name)
+          end
+
+        # Convert field types for type specification
+        field_types =
+          for {field_name, field_type} <- fields do
+            elixir_type =
+              case field_type do
+                "string" -> :string
+                "int" -> :integer
+                "float" -> :float
+                "bool" -> :boolean
+                # For custom types like Company
+                _ -> :any
+              end
+
+            {String.to_atom(field_name), elixir_type}
+          end
+
+        # Generate struct definition
+        Module.create(
+          String.to_atom("Elixir.#{type_name}"),
+          quote do
+            defstruct unquote(field_names)
+            @type t :: %__MODULE__{unquote_splicing(field_types)}
+          end,
+          Macro.Env.location(__ENV__)
+        )
+      end
+    end
+  end
+
   def new do
     %__MODULE__{}
   end
