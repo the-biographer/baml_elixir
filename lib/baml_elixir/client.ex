@@ -32,6 +32,7 @@ defmodule BamlElixir.Client do
       # Get BAML types
       baml_types = BamlElixir.Native.parse_baml(unquote(path))
       baml_class_types = baml_types[:classes]
+      baml_enum_types = baml_types[:enums]
 
       # Generate structs for each BAML class type
       for {type_name, fields} <- baml_class_types do
@@ -57,15 +58,39 @@ defmodule BamlElixir.Client do
             {String.to_atom(field_name), elixir_type}
           end
 
-        # Generate struct definition
+        module_name = Module.concat([__MODULE__, type_name])
+
         Module.create(
-          String.to_atom("Elixir.#{type_name}"),
+          module_name,
           quote do
             defstruct unquote(field_names)
             @type t :: %__MODULE__{unquote_splicing(field_types)}
           end,
           Macro.Env.location(__ENV__)
         )
+
+        IO.puts("Generated module: #{inspect(module_name)}")
+      end
+
+      # Generate modules for each BAML enum type
+      for {enum_name, variants} <- baml_enum_types do
+        # Convert variants to atoms for the type specification
+        variant_atoms = Enum.map(variants, &String.to_atom/1)
+        variant_types = Enum.map_join(variant_atoms, " | ", &(":" <> Atom.to_string(&1)))
+        type_value = String.to_atom(variant_types)
+
+        module_name = Module.concat([__MODULE__, enum_name])
+
+        Module.create(
+          module_name,
+          quote do
+            IO.puts("Type value for #{unquote(enum_name)}: #{inspect(unquote(type_value))}")
+            @type t :: unquote(type_value)
+          end,
+          Macro.Env.location(__ENV__)
+        )
+
+        IO.puts("Generated enum module: #{inspect(module_name)}")
       end
     end
   end
