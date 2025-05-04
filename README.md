@@ -56,19 +56,17 @@ function ExtractResume(resume: string) -> Resume {
 Now call the BAML function:
 
 ```elixir
-alias BamlElixir.Client
-
-Client.new()
-|> Client.from("priv/baml_src")
-|> Client.call("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."})
+BamlElixir.Client.call("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."}, %{
+  path: "priv/baml_src"
+})
 ```
 
 ### Stream results
 
 ```elixir
-Client.new()
-|> Client.from("priv/baml_src")
-|> Client.stream!("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."})
+BamlElixir.Client.stream!("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."}, %{
+  path: "priv/baml_src"
+})
 |> Enum.each(&IO.inspect/1)
 ```
 
@@ -106,9 +104,7 @@ Example:
 Send an image URL:
 
 ```elixir
-BamlElixir.Client.new()
-|> BamlElixir.Client.from("priv/baml_src")
-|> BamlElixir.Client.call("DescribeImage", %{
+BamlElixir.Client.call("DescribeImage", %{
   myImg: %{
     "url" => "https://upload.wikimedia.org/wikipedia/en/4/4d/Shrek_%28character%29.png"
   }
@@ -117,45 +113,40 @@ BamlElixir.Client.new()
 
 Or send base64 encoded image data:
 
-````elixir
-BamlElixir.Client.new()
-|> BamlElixir.Client.from("priv/baml_src")
-|> BamlElixir.Client.call("DescribeImage", %{
+```elixir
+BamlElixir.Client.call("DescribeImage", %{
   myImg: %{
     "base64" => "data:image/png;base64,..."
   }
 })
+```
+
 ### Collect usage data
 
 ```elixir
 collector = BamlElixir.Collector.new("my_collector")
 
-Client.new()
-|> Client.from("priv/baml_src")
-|> Client.add_collector(collector)
-|> Client.call("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."})
+BamlElixir.Client.call("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."}, %{
+  collectors: [collector]
+})
 
-collector.usage()
-````
+BamlElixir.Collector.usage(collector)
+```
 
 ### Switch LLM clients
 
 From the existing list of LLM clients, you can switch to a different one by calling `Client.use_llm_client/2`.
 
 ```elixir
-client =
-Client.new()
-|> Client.from("priv/baml_src")
-
-client
-|> Client.use_llm_client("GPT4oMini")
-|> Client.call("WhichModel", %{})
+BamlElixir.Client.call("WhichModel", %{}, %{
+  llm_client: "GPT4oMini"
+})
 |> IO.inspect()
 # => "gpt-4o-mini"
 
-client
-|> Client.use_llm_client("DeepSeekR1")
-|> Client.call("WhichModel", %{})
+BamlElixir.Client.call("WhichModel", %{}, %{
+  llm_client: "DeepSeekR1"
+})
 |> IO.inspect()
 # => "deepseek-r1"
 ```

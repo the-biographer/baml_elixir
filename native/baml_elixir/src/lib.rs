@@ -69,7 +69,7 @@ fn term_to_baml_value<'a>(term: Term<'a>) -> Result<BamlValue, Error> {
     Err(Error::Term(Box::new("Unsupported type")))
 }
 
-fn baml_value_to_term<'a>(env: Env<'a>, value: &BamlValue, client: &Client) -> NifResult<Term<'a>> {
+fn baml_value_to_term<'a>(env: Env<'a>, value: &BamlValue) -> NifResult<Term<'a>> {
     match value {
         BamlValue::String(s) => Ok(s.encode(env)),
         BamlValue::Int(i) => Ok(i.encode(env)),
@@ -79,14 +79,14 @@ fn baml_value_to_term<'a>(env: Env<'a>, value: &BamlValue, client: &Client) -> N
         BamlValue::List(items) => {
             let terms: Result<Vec<Term>, Error> = items
                 .iter()
-                .map(|item| baml_value_to_term(env, item, client))
+                .map(|item| baml_value_to_term(env, item))
                 .collect();
             Ok(terms?.encode(env))
         }
         BamlValue::Map(map) => {
             let mut result_map = Term::map_new(env);
             for (key, value) in map.iter() {
-                let value_term = baml_value_to_term(env, value, client)?;
+                let value_term = baml_value_to_term(env, value)?;
                 result_map = result_map
                     .map_put(key.encode(env), value_term)
                     .map_err(|_| Error::Term(Box::new("Failed to add key to map")))?;
@@ -103,7 +103,7 @@ fn baml_value_to_term<'a>(env: Env<'a>, value: &BamlValue, client: &Client) -> N
             for (key, value) in map.iter() {
                 let key_atom = rustler::Atom::from_str(env, key)
                     .map_err(|_| Error::Term(Box::new("Failed to create key atom")))?;
-                let value_term = baml_value_to_term(env, value, client)?;
+                let value_term = baml_value_to_term(env, value)?;
                 result_map = result_map
                     .map_put(key_atom.encode(env), value_term)
                     .map_err(|_| Error::Term(Box::new("Failed to add key to map")))?;
@@ -141,33 +141,21 @@ struct Client<'a> {
 }
 
 fn prepare_request<'a>(
-    client: Term<'a>,
     args: Term<'a>,
+    path: String,
+    collectors: Vec<ResourceArc<collector::CollectorResource>>,
+    client_registry: Term<'a>,
 ) -> Result<
     (
-        Client<'a>,
         BamlRuntime,
         BamlMap<String, BamlValue>,
         RuntimeContextManager,
-        Option<ClientRegistry>,
         Option<Vec<Arc<Collector>>>,
+        Option<ClientRegistry>,
     ),
     Error,
 > {
-    let client = client.decode::<Client>()?;
-
-    // Get from client or default to "baml_src"
-    let from_directory = if client.from.is_empty() {
-        "baml_src".to_string()
-    } else {
-        client.from.clone()
-    };
-
-    // Create runtime
-    let runtime = match BamlRuntime::from_directory(
-        &Path::new(&from_directory),
-        std::env::vars().collect(),
-    ) {
+    let runtime = match BamlRuntime::from_directory(&Path::new(&path), std::env::vars().collect()) {
         Ok(r) => r,
         Err(e) => return Err(Error::Term(Box::new(e.to_string()))),
     };
@@ -191,16 +179,19 @@ fn prepare_request<'a>(
         None, // baml source reader
     );
 
-    let collectors = Some(client.collectors.iter().map(|c| c.inner.clone()).collect());
+    let collectors = if collectors.is_empty() {
+        None
+    } else {
+        Some(collectors.iter().map(|c| c.inner.clone()).collect())
+    };
 
-    // Handle client registry
-    let client_registry = if client.client_registry.is_atom()
-        && client.client_registry.decode::<rustler::Atom>()? == atoms::nil()
+    let client_registry = if client_registry.is_atom()
+        && client_registry.decode::<rustler::Atom>()? == atoms::nil()
     {
         None
-    } else if client.client_registry.is_map() {
+    } else if client_registry.is_map() {
         let mut registry = ClientRegistry::new();
-        let iter = MapIterator::new(client.client_registry)
+        let iter = MapIterator::new(client_registry)
             .ok_or(Error::Term(Box::new("Invalid registry map")))?;
         for (key_term, value_term) in iter {
             let key = term_to_string(key_term)?;
@@ -216,19 +207,15 @@ fn prepare_request<'a>(
         )));
     };
 
-    Ok((client, runtime, params, ctx, client_registry, collectors))
+    Ok((runtime, params, ctx, collectors, client_registry))
 }
 
-fn parse_function_result<'a>(
-    env: Env<'a>,
-    result: FunctionResult,
-    client: &Client,
-) -> NifResult<Term<'a>> {
+fn parse_function_result<'a>(env: Env<'a>, result: FunctionResult) -> NifResult<Term<'a>> {
     let parsed_value = result.parsed();
     match parsed_value {
         Some(Ok(response_baml_value)) => {
             let baml_value = response_baml_value.0.clone().value();
-            let result_term = baml_value_to_term(env, &baml_value, client)?;
+            let result_term = baml_value_to_term(env, &baml_value)?;
             Ok((atoms::ok(), result_term).encode(env))
         }
         Some(Err(e)) => Ok((atoms::error(), format!("{:?}", e)).encode(env)),
@@ -239,12 +226,14 @@ fn parse_function_result<'a>(
 #[rustler::nif(schedule = "DirtyIo")]
 fn call<'a>(
     env: Env<'a>,
-    client: Term<'a>,
     function_name: String,
-    args: Term<'a>,
+    arguments: Term<'a>,
+    path: String,
+    collectors: Vec<ResourceArc<collector::CollectorResource>>,
+    client_registry: Term<'a>,
 ) -> NifResult<Term<'a>> {
-    let (client, runtime, params, ctx, client_registry, collectors) =
-        prepare_request(client, args)?;
+    let (runtime, params, ctx, collectors, client_registry) =
+        prepare_request(arguments, path, collectors, client_registry)?;
 
     // Call function synchronously
     let (result, _trace_id) = runtime.call_function_sync(
@@ -258,7 +247,7 @@ fn call<'a>(
 
     // Handle result
     match result {
-        Ok(function_result) => parse_function_result(env, function_result, &client),
+        Ok(function_result) => parse_function_result(env, function_result),
         Err(e) => Ok((atoms::error(), format!("{:?}", e)).encode(env)),
     }
 }
@@ -266,17 +255,19 @@ fn call<'a>(
 #[rustler::nif(schedule = "DirtyIo")]
 fn stream<'a>(
     env: Env<'a>,
-    client: Term<'a>,
     pid: Term<'a>,
     function_name: String,
-    args: Term<'a>,
+    arguments: Term<'a>,
+    path: String,
+    collectors: Vec<ResourceArc<collector::CollectorResource>>,
+    client_registry: Term<'a>,
 ) -> NifResult<Term<'a>> {
     let pid = pid.decode::<LocalPid>()?;
-    let (client, runtime, params, ctx, client_registry, collectors) =
-        prepare_request(client, args)?;
+    let (runtime, params, ctx, collectors, client_registry) =
+        prepare_request(arguments, path, collectors, client_registry)?;
 
     let on_event = |r: FunctionResult| {
-        let result_term = parse_function_result(env, r, &client).unwrap();
+        let result_term = parse_function_result(env, r).unwrap();
         let _ = env.send(&pid, result_term);
     };
 
