@@ -343,6 +343,22 @@ fn parse_baml(env: Env, path: Option<String>) -> NifResult<Term> {
         enum_variants.insert(r#enum.name().to_string(), variants);
     }
 
+    // Create a map of the functions and their parameters
+    let mut function_params = HashMap::new();
+    for function in ir.walk_functions() {
+        let mut params = HashMap::new();
+
+        // Get input parameters
+        for (name, field_type) in function.inputs() {
+            params.insert(name.to_string(), field_type.to_string());
+        }
+
+        // Get return type
+        let return_type = function.output().to_string();
+
+        function_params.insert(function.name().to_string(), (params, return_type));
+    }
+
     // convert to elixir map term
     let mut map = Term::map_new(env);
 
@@ -369,6 +385,30 @@ fn parse_baml(env: Env, path: Option<String>) -> NifResult<Term> {
     map = map.map_put(
         rustler::Atom::from_str(env, "enums").unwrap().encode(env),
         enums_map,
+    )?;
+
+    // Add functions
+    let mut functions_map = Term::map_new(env);
+    for (function_name, (params, return_type)) in function_params {
+        let mut function_map = Term::map_new(env);
+
+        // Add parameters
+        let mut params_map = Term::map_new(env);
+        for (param_name, param_type) in params {
+            params_map = params_map.map_put(param_name.encode(env), param_type.encode(env))?;
+        }
+        function_map = function_map.map_put("params".encode(env), params_map)?;
+
+        // Add return type
+        function_map = function_map.map_put("return_type".encode(env), return_type.encode(env))?;
+
+        functions_map = functions_map.map_put(function_name.encode(env), function_map)?;
+    }
+    map = map.map_put(
+        rustler::Atom::from_str(env, "functions")
+            .unwrap()
+            .encode(env),
+        functions_map,
     )?;
 
     Ok(map)
