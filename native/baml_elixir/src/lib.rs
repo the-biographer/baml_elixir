@@ -82,7 +82,7 @@ fn baml_value_to_term<'a>(env: Env<'a>, value: &BamlValue, client: &Client) -> N
                 .collect();
             Ok(terms?.encode(env))
         }
-        BamlValue::Map(map) | BamlValue::Class(_, map) => {
+        BamlValue::Map(map) => {
             let mut result_map = Term::map_new(env);
             for (key, value) in map.iter() {
                 let value_term = baml_value_to_term(env, value, client)?;
@@ -92,18 +92,39 @@ fn baml_value_to_term<'a>(env: Env<'a>, value: &BamlValue, client: &Client) -> N
             }
             Ok(result_map)
         }
+        BamlValue::Class(class_name, map) => {
+            let mut result_map = Term::map_new(env);
+            let class_atom = rustler::Atom::from_str(env, "__baml_class__")
+                .map_err(|_| Error::Term(Box::new("Failed to create atom")))?;
+            result_map = result_map
+                .map_put(class_atom.encode(env), class_name.encode(env))
+                .map_err(|_| Error::Term(Box::new("Failed to add class name")))?;
+            for (key, value) in map.iter() {
+                let key_atom = rustler::Atom::from_str(env, key)
+                    .map_err(|_| Error::Term(Box::new("Failed to create key atom")))?;
+                let value_term = baml_value_to_term(env, value, client)?;
+                result_map = result_map
+                    .map_put(key_atom.encode(env), value_term)
+                    .map_err(|_| Error::Term(Box::new("Failed to add key to map")))?;
+            }
+            Ok(result_map)
+        }
         BamlValue::Media(_media) => {
             // For now, return an error since we need to check the actual BamlMedia structure
             Err(Error::Term(Box::new("Media type not yet supported")))
         }
         BamlValue::Enum(enum_type, variant) => {
-            // Convert enum to a map with type and variant
+            // Convert enum to a map with __baml_enum__ and value
             let mut result_map = Term::map_new(env);
+            let enum_atom = rustler::Atom::from_str(env, "__baml_enum__")
+                .map_err(|_| Error::Term(Box::new("Failed to create enum atom")))?;
+            let value_atom = rustler::Atom::from_str(env, "value")
+                .map_err(|_| Error::Term(Box::new("Failed to create value atom")))?;
             result_map = result_map
-                .map_put("type".encode(env), enum_type.encode(env))
+                .map_put(enum_atom.encode(env), enum_type.encode(env))
                 .map_err(|_| Error::Term(Box::new("Failed to add enum type")))?;
             result_map = result_map
-                .map_put("variant".encode(env), variant.encode(env))
+                .map_put(value_atom.encode(env), variant.encode(env))
                 .map_err(|_| Error::Term(Box::new("Failed to add enum variant")))?;
             Ok(result_map)
         }

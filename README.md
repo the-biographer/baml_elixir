@@ -6,11 +6,13 @@ Uses the BAML Rust NIF to call the BAML library.
 What this library does:
 
 - Call functions in BAML files.
-- Make use of the BAML LLM client to call LLM functions.
+- Switch between different LLM clients.
+- Get usage data using collectors.
 
 What this library does not do:
 
-- Generate `baml_client` Elixir client code from BAML files.
+- Code generation of Elixir `baml_client` from BAML files.
+- Automatically parse BAML results into Elixir structs.
 
 ## Usage
 
@@ -54,7 +56,6 @@ function ExtractResume(resume: string) -> Resume {
 Now call the BAML function:
 
 ```elixir
-# from: The path to the baml_src directory.
 alias BamlElixir.Client
 
 Client.new()
@@ -69,6 +70,35 @@ Client.new()
 |> Client.from("priv/baml_src")
 |> Client.stream!("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."})
 |> Enum.each(&IO.inspect/1)
+```
+
+#### Parsing results
+
+If BAML returns a class type, you will get a map with keys as atoms and a special key `__baml_class__` with the BAML class name.
+
+Example:
+
+```elixir
+%{
+  __baml_class__: "Resume",
+  name: "John Doe",
+  job_title: "CTO",
+  company: %{
+    __baml_class__: "Company",
+    name: "Acme Inc."
+  }
+}
+```
+
+If BAML returns an enum type, you will get a map two special keys: `__baml_enum__` with the BAML enum name and `value` with the enum value.
+
+Example:
+
+```elixir
+%{
+  __baml_enum__: "Color",
+  value: "Red"
+}
 ```
 
 ### Images
@@ -137,7 +167,7 @@ Add baml_elixir to your mix.exs:
 ```elixir
 def deps do
   [
-    {:baml_elixir, "~> 1.0.0-pre.3"}
+    {:baml_elixir, "~> 1.0.0-pre.4"}
   ]
 end
 ```
