@@ -1,7 +1,7 @@
 use baml_runtime::client_registry::ClientRegistry;
 use baml_runtime::tracingv2::storage::storage::Collector;
 use baml_runtime::{BamlRuntime, FunctionResult, RuntimeContextManager};
-use baml_types::{BamlMap, BamlValue};
+use baml_types::{BamlMap, BamlValue, FieldType, LiteralValue};
 use collector::Usage;
 use rustler::{
     Encoder, Env, Error, LocalPid, MapIterator, NifResult, NifStruct, ResourceArc, Term,
@@ -319,7 +319,8 @@ fn parse_baml(env: Env, path: Option<String>) -> NifResult<Term> {
     for class in ir.walk_classes() {
         let mut fields = HashMap::new();
         for field in class.walk_fields() {
-            fields.insert(field.name().to_string(), field.r#type().to_string());
+            let field_type = to_elixir_type(env, &field.r#type());
+            fields.insert(field.name().to_string(), field_type);
         }
         class_fields.insert(class.name().to_string(), fields);
     }
@@ -341,11 +342,12 @@ fn parse_baml(env: Env, path: Option<String>) -> NifResult<Term> {
 
         // Get input parameters
         for (name, field_type) in function.inputs() {
-            params.insert(name.to_string(), field_type.to_string());
+            let param_type = to_elixir_type(env, field_type);
+            params.insert(name.to_string(), param_type);
         }
 
         // Get return type
-        let return_type = function.output().to_string();
+        let return_type = to_elixir_type(env, &function.output());
 
         function_params.insert(function.name().to_string(), (params, return_type));
     }
@@ -358,7 +360,7 @@ fn parse_baml(env: Env, path: Option<String>) -> NifResult<Term> {
     for (class_name, fields) in class_fields {
         let mut field_map = Term::map_new(env);
         for (field_name, field_type) in fields {
-            field_map = field_map.map_put(field_name.encode(env), field_type.encode(env))?;
+            field_map = field_map.map_put(field_name.encode(env), field_type)?;
         }
         classes_map = classes_map.map_put(class_name.encode(env), field_map)?;
     }
@@ -386,12 +388,12 @@ fn parse_baml(env: Env, path: Option<String>) -> NifResult<Term> {
         // Add parameters
         let mut params_map = Term::map_new(env);
         for (param_name, param_type) in params {
-            params_map = params_map.map_put(param_name.encode(env), param_type.encode(env))?;
+            params_map = params_map.map_put(param_name.encode(env), param_type)?;
         }
         function_map = function_map.map_put("params".encode(env), params_map)?;
 
         // Add return type
-        function_map = function_map.map_put("return_type".encode(env), return_type.encode(env))?;
+        function_map = function_map.map_put("return_type".encode(env), return_type)?;
 
         functions_map = functions_map.map_put(function_name.encode(env), function_map)?;
     }
@@ -403,6 +405,95 @@ fn parse_baml(env: Env, path: Option<String>) -> NifResult<Term> {
     )?;
 
     Ok(map)
+}
+
+fn to_elixir_type<'a>(env: Env<'a>, field_type: &FieldType) -> Term<'a> {
+    match field_type {
+        FieldType::Enum(name) => {
+            // Return {:enum, name}
+            (rustler::Atom::from_str(env, "enum").unwrap(), name).encode(env)
+        }
+        FieldType::Class(name) => {
+            // Return {:class, name}
+            (rustler::Atom::from_str(env, "class").unwrap(), name).encode(env)
+        }
+        FieldType::List(inner) => {
+            // Return {:list, inner_type}
+            let inner_type = to_elixir_type(env, inner);
+            (rustler::Atom::from_str(env, "list").unwrap(), inner_type).encode(env)
+        }
+        FieldType::Map(key, value) => {
+            // Return {:map, key_type, value_type}
+            let key_type = to_elixir_type(env, key);
+            let value_type = to_elixir_type(env, value);
+            (
+                rustler::Atom::from_str(env, "map").unwrap(),
+                key_type,
+                value_type,
+            )
+                .encode(env)
+        }
+        FieldType::Primitive(r#type) => {
+            // Return {:primitive, primitive_value}
+            let primitive_value = match r#type {
+                baml_types::TypeValue::String => rustler::Atom::from_str(env, "string").unwrap(),
+                baml_types::TypeValue::Int => rustler::Atom::from_str(env, "integer").unwrap(),
+                baml_types::TypeValue::Float => rustler::Atom::from_str(env, "float").unwrap(),
+                baml_types::TypeValue::Bool => rustler::Atom::from_str(env, "boolean").unwrap(),
+                baml_types::TypeValue::Null => atoms::nil(),
+                baml_types::TypeValue::Media(_) => rustler::Atom::from_str(env, "media").unwrap(),
+            };
+            (
+                rustler::Atom::from_str(env, "primitive").unwrap(),
+                primitive_value,
+            )
+                .encode(env)
+        }
+        FieldType::Literal(value) => {
+            // Return {:literal, value}
+            let literal_value = match value {
+                LiteralValue::String(s) => rustler::Atom::from_str(env, &s).unwrap().encode(env),
+                LiteralValue::Int(i) => i.encode(env),
+                LiteralValue::Bool(b) => b.encode(env),
+            };
+            (
+                rustler::Atom::from_str(env, "literal").unwrap(),
+                literal_value,
+            )
+                .encode(env)
+        }
+        FieldType::Union(inner) => {
+            // Return {:union, list_of_types}
+            let types: Vec<Term> = inner.iter().map(|t| to_elixir_type(env, t)).collect();
+            (rustler::Atom::from_str(env, "union").unwrap(), types).encode(env)
+        }
+        FieldType::Tuple(inner) => {
+            // Return {:tuple, list_of_types}
+            let types: Vec<Term> = inner.iter().map(|t| to_elixir_type(env, t)).collect();
+            (rustler::Atom::from_str(env, "tuple").unwrap(), types).encode(env)
+        }
+        FieldType::Optional(inner) => {
+            // Return {:optional, type}
+            let inner_type = to_elixir_type(env, inner);
+            (
+                rustler::Atom::from_str(env, "optional").unwrap(),
+                inner_type,
+            )
+                .encode(env)
+        }
+        FieldType::RecursiveTypeAlias(name) => {
+            // Return {:alias, name}
+            (rustler::Atom::from_str(env, "alias").unwrap(), name).encode(env)
+        }
+        FieldType::Arrow(_) => {
+            // Arrow types are not supported in Elixir type specs
+            panic!("Arrow types are not supported in Elixir")
+        }
+        FieldType::WithMetadata { base, .. } => {
+            // For types with metadata, we use the base type
+            to_elixir_type(env, base)
+        }
+    }
 }
 
 rustler::init!("Elixir.BamlElixir.Native");

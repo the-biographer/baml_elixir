@@ -27,17 +27,19 @@ defmodule BamlElixir.Client do
   defmacro __using__(opts) do
     path = Keyword.get(opts, :path, "baml_src")
 
+    # Get BAML types
+    baml_types = BamlElixir.Native.parse_baml(path)
+    baml_class_types = baml_types[:classes]
+    baml_enum_types = baml_types[:enums]
+    baml_functions = baml_types[:functions]
+
     quote do
       import BamlElixir.Client
 
-      # Get BAML types
-      baml_types = BamlElixir.Native.parse_baml(unquote(path))
-      baml_class_types = baml_types[:classes]
-      baml_enum_types = baml_types[:enums]
-
       # Generate types
-      BamlElixir.Client.generate_class_types(__MODULE__, baml_class_types)
-      BamlElixir.Client.generate_enum_types(__MODULE__, baml_enum_types)
+      generate_class_types(unquote(baml_class_types))
+      generate_enum_types(unquote(baml_enum_types))
+      generate_call_function_clauses(unquote(baml_functions), unquote(path))
     end
   end
 
@@ -64,7 +66,14 @@ defmodule BamlElixir.Client do
   def call(function_name, args, opts \\ %{}) do
     {path, collectors, client_registry} = prepare_opts(opts)
 
-    BamlElixir.Native.call(function_name, args, path, collectors, client_registry)
+    with {:ok, result} <-
+           BamlElixir.Native.call(function_name, args, path, collectors, client_registry) do
+      if opts[:parse] != false do
+        parse_result(result, opts[:prefix])
+      else
+        result
+      end
+    end
   end
 
   @doc """
@@ -85,8 +94,8 @@ defmodule BamlElixir.Client do
       stream = BamlElixir.Client.stream!("MyFunction", %{arg1: "value"})
       Enum.each(stream, fn result -> IO.inspect(result) end)
   """
-  @spec stream!(String.t(), map(), map()) :: Enumerable.t()
-  def stream!(function_name, args, opts \\ %{}) do
+  @spec create_stream!(String.t(), map(), map()) :: Enumerable.t()
+  def create_stream!(function_name, args, opts \\ %{}) do
     {path, collectors, client_registry} = prepare_opts(opts)
 
     Stream.resource(
@@ -118,28 +127,45 @@ defmodule BamlElixir.Client do
     )
   end
 
+  def stream!(function_name, args, callback, opts \\ %{}) do
+    create_stream!(function_name, args, opts)
+    |> Stream.map(fn result ->
+      result =
+        if opts[:parse] != false do
+          parse_result(result, opts[:prefix])
+        else
+          result
+        end
+
+      callback.(result)
+    end)
+    |> Stream.run()
+
+    callback.(:done)
+  end
+
   @doc false
-  def generate_class_types(module, class_types) do
+  defmacro generate_class_types(class_types) do
+    module = __CALLER__.module
+
     for {type_name, fields} <- class_types do
       field_names = get_field_names(fields)
-      field_types = get_field_types(fields)
+      field_types = get_field_types(fields, __CALLER__)
       module_name = Module.concat([module, type_name])
 
-      Module.create(
-        module_name,
-        quote do
+      quote do
+        defmodule unquote(module_name) do
           defstruct unquote(field_names)
           @type t :: %__MODULE__{unquote_splicing(field_types)}
-        end,
-        Macro.Env.location(__ENV__)
-      )
-
-      IO.puts("Generated BAML class module: #{inspect(module_name)}")
+        end
+      end
     end
   end
 
   @doc false
-  def generate_enum_types(module, enum_types) do
+  defmacro generate_enum_types(enum_types) do
+    module = __CALLER__.module
+
     for {enum_name, variants} <- enum_types do
       variant_atoms = Enum.map(variants, &String.to_atom/1)
       module_name = Module.concat([module, enum_name])
@@ -149,15 +175,132 @@ defmodule BamlElixir.Client do
           {:|, [], [atom, acc]}
         end)
 
-      Module.create(
-        module_name,
-        quote do
+      quote do
+        defmodule unquote(module_name) do
           @type t :: unquote(union_type)
-        end,
-        Macro.Env.location(__ENV__)
-      )
+        end
+      end
+    end
+  end
 
-      IO.puts("Generated BAML enum module: #{inspect(module_name)}")
+  @doc false
+  defmacro generate_call_function_clauses(functions, path) do
+    for {function_name, function_info} <- functions do
+      function_atom = String.to_atom("call#{function_name}")
+
+      param_types =
+        for {param_name, param_type} <- function_info["params"] do
+          {String.to_atom(param_name), to_elixir_type(param_type, __CALLER__)}
+        end
+
+      typespec =
+        quote do
+          @spec unquote(function_atom)(%{unquote_splicing(param_types)}, map()) ::
+                  {:ok, unquote(to_elixir_type(function_info["return_type"], __CALLER__))}
+                  | {:error, String.t()}
+        end
+
+      function_clause =
+        quote do
+          def unquote(function_atom)(args, opts \\ %{}) do
+            opts = Map.put(opts, :path, unquote(path))
+            call(unquote(function_name), args, opts)
+          end
+        end
+
+      quote do
+        unquote(typespec)
+        unquote(function_clause)
+      end
+    end
+  end
+
+  defp to_elixir_type(type, caller) do
+    case type do
+      {:primitive, primitive} ->
+        case primitive do
+          :string ->
+            quote(do: String.t())
+
+          :integer ->
+            quote(do: integer())
+
+          :float ->
+            quote(do: float())
+
+          :boolean ->
+            quote(do: boolean())
+
+          nil ->
+            quote(do: nil)
+
+          :media ->
+            quote(
+              do:
+                %{url: String.t()}
+                | %{url: String.t(), media_type: String.t()}
+                | %{base64: String.t()}
+                | %{base64: String.t(), media_type: String.t()}
+            )
+        end
+
+      {:enum, name} ->
+        # Convert enum name to module reference with .t()
+        module = Module.concat([caller.module, name])
+        quote(do: unquote(module).t())
+
+      {:class, name} ->
+        # Convert class name to module reference with .t()
+        module = Module.concat([caller.module, name])
+        quote(do: unquote(module).t())
+
+      {:list, inner_type} ->
+        # Convert to list type
+        quote(do: [unquote(to_elixir_type(inner_type, caller))])
+
+      {:map, key_type, value_type} ->
+        # Convert to map type
+        quote(
+          do: %{
+            unquote(to_elixir_type(key_type, caller)) =>
+              unquote(to_elixir_type(value_type, caller))
+          }
+        )
+
+      {:literal, value} ->
+        # For literals, use the value directly
+        case value do
+          v when is_atom(v) -> v
+          v when is_integer(v) -> v
+          v when is_boolean(v) -> v
+        end
+
+      {:union, types} ->
+        # Convert union to pipe operator
+        [first_type | rest_types] = types
+        first_ast = to_elixir_type(first_type, caller)
+
+        Enum.reduce(rest_types, first_ast, fn type, acc ->
+          {:|, [], [to_elixir_type(type, caller), acc]}
+        end)
+
+      {:tuple, types} ->
+        # Convert to tuple type
+        types_ast = Enum.map(types, &to_elixir_type(&1, caller))
+        {:{}, [], types_ast}
+
+      {:optional, inner_type} ->
+        # Convert optional to union with nil
+        {:|, [], [to_elixir_type(inner_type, caller), nil]}
+
+      {:alias, name} ->
+        # For recursive type aliases, use the name with .t()
+        module = String.to_atom(name)
+        quote(do: unquote(module).t())
+
+      _ ->
+        # Fallback to any
+        quote(do: any())
     end
   end
 
@@ -167,18 +310,9 @@ defmodule BamlElixir.Client do
     end
   end
 
-  defp get_field_types(fields) do
+  defp get_field_types(fields, caller) do
     for {field_name, field_type} <- fields do
-      elixir_type =
-        case field_type do
-          "string" -> :string
-          "int" -> :integer
-          "float" -> :float
-          "bool" -> :boolean
-          # For custom types like Company
-          _ -> :any
-        end
-
+      elixir_type = to_elixir_type(field_type, caller)
       {String.to_atom(field_name), elixir_type}
     end
   end
@@ -188,5 +322,19 @@ defmodule BamlElixir.Client do
     collectors = (opts[:collectors] || []) |> Enum.map(fn collector -> collector.reference end)
     client_registry = opts[:llm_client] && %{primary: opts[:llm_client]}
     {path, collectors, client_registry}
+  end
+
+  defp parse_result(%{:__baml_class__ => class_name} = result, prefix) do
+    module = Module.concat(prefix, class_name)
+    values = Enum.map(result, fn {key, value} -> {key, parse_result(value, prefix)} end)
+    struct(module, values)
+  end
+
+  defp parse_result(%{:__baml_enum__ => _, :value => value}, _prefix) do
+    String.to_atom(value)
+  end
+
+  defp parse_result(result, _prefix) do
+    result
   end
 end
