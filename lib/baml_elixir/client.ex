@@ -1,8 +1,18 @@
 defmodule BamlElixir.Client do
   @moduledoc """
   A client for interacting with BAML functions.
+  Data structures and functions are generated from BAML source files.
 
-  This module provides functionality to call BAML functions either synchronously or as a stream.
+  > #### `use BamlElixir.Client, path: "priv/baml_src"` {: .info}
+  >
+  > When you `use BamlElixir.Client`, it will define:
+  > - `call/3` and `stream!/3` functions for each function in the BAML source file.
+  > - A `defstruct/1` and `@type t/0` for each class in the BAML source file.
+  > - A `@type t/0` for each enum in the BAML source file.
+  >
+  > The `path` option is optional and defaults to `"baml_src"`, you may want to set it to `"priv/baml_src"`.
+
+  This module also provides functionality to call BAML functions either synchronously or as a stream.
 
   ## Examples
 
@@ -13,12 +23,6 @@ defmodule BamlElixir.Client do
       stream = BamlElixir.Client.stream!("MyFunction", %{arg1: "value"})
       Enum.each(stream, fn result -> IO.inspect(result) end)
   """
-
-  defstruct [
-    :client_registry,
-    from: "baml_src",
-    collectors: []
-  ]
 
   defmacro __using__(opts) do
     path = Keyword.get(opts, :path, "baml_src")
@@ -35,91 +39,6 @@ defmodule BamlElixir.Client do
       BamlElixir.Client.generate_class_types(__MODULE__, baml_class_types)
       BamlElixir.Client.generate_enum_types(__MODULE__, baml_enum_types)
     end
-  end
-
-  @doc false
-  def generate_class_types(module, class_types) do
-    for {type_name, fields} <- class_types do
-      field_names = get_field_names(fields)
-      field_types = get_field_types(fields)
-      module_name = Module.concat([module, type_name])
-
-      Module.create(
-        module_name,
-        quote do
-          defstruct unquote(field_names)
-          @type t :: %__MODULE__{unquote_splicing(field_types)}
-        end,
-        Macro.Env.location(__ENV__)
-      )
-
-      IO.puts("Generated BAML class module: #{inspect(module_name)}")
-    end
-  end
-
-  @doc false
-  def generate_enum_types(module, enum_types) do
-    for {enum_name, variants} <- enum_types do
-      variant_atoms = Enum.map(variants, &String.to_atom/1)
-      module_name = Module.concat([module, enum_name])
-
-      union_type =
-        Enum.reduce(variant_atoms, fn atom, acc ->
-          {:|, [], [atom, acc]}
-        end)
-
-      Module.create(
-        module_name,
-        quote do
-          @type t :: unquote(union_type)
-        end,
-        Macro.Env.location(__ENV__)
-      )
-
-      IO.puts("Generated BAML enum module: #{inspect(module_name)}")
-    end
-  end
-
-  defp get_field_names(fields) do
-    for {field_name, _} <- fields do
-      String.to_atom(field_name)
-    end
-  end
-
-  defp get_field_types(fields) do
-    for {field_name, field_type} <- fields do
-      elixir_type =
-        case field_type do
-          "string" -> :string
-          "int" -> :integer
-          "float" -> :float
-          "bool" -> :boolean
-          # For custom types like Company
-          _ -> :any
-        end
-
-      {String.to_atom(field_name), elixir_type}
-    end
-  end
-
-  def new do
-    %__MODULE__{}
-  end
-
-  def from(client = %__MODULE__{}, path) do
-    %{client | from: path}
-  end
-
-  def add_collector(
-        client = %__MODULE__{},
-        %BamlElixir.Collector{reference: reference}
-      )
-      when is_reference(reference) do
-    %{client | collectors: [reference | client.collectors]}
-  end
-
-  def use_llm_client(client = %__MODULE__{}, name) do
-    %{client | client_registry: %{primary: name}}
   end
 
   @doc """
@@ -197,6 +116,71 @@ defmodule BamlElixir.Client do
       end,
       fn _ -> :ok end
     )
+  end
+
+  @doc false
+  def generate_class_types(module, class_types) do
+    for {type_name, fields} <- class_types do
+      field_names = get_field_names(fields)
+      field_types = get_field_types(fields)
+      module_name = Module.concat([module, type_name])
+
+      Module.create(
+        module_name,
+        quote do
+          defstruct unquote(field_names)
+          @type t :: %__MODULE__{unquote_splicing(field_types)}
+        end,
+        Macro.Env.location(__ENV__)
+      )
+
+      IO.puts("Generated BAML class module: #{inspect(module_name)}")
+    end
+  end
+
+  @doc false
+  def generate_enum_types(module, enum_types) do
+    for {enum_name, variants} <- enum_types do
+      variant_atoms = Enum.map(variants, &String.to_atom/1)
+      module_name = Module.concat([module, enum_name])
+
+      union_type =
+        Enum.reduce(variant_atoms, fn atom, acc ->
+          {:|, [], [atom, acc]}
+        end)
+
+      Module.create(
+        module_name,
+        quote do
+          @type t :: unquote(union_type)
+        end,
+        Macro.Env.location(__ENV__)
+      )
+
+      IO.puts("Generated BAML enum module: #{inspect(module_name)}")
+    end
+  end
+
+  defp get_field_names(fields) do
+    for {field_name, _} <- fields do
+      String.to_atom(field_name)
+    end
+  end
+
+  defp get_field_types(fields) do
+    for {field_name, field_type} <- fields do
+      elixir_type =
+        case field_type do
+          "string" -> :string
+          "int" -> :integer
+          "float" -> :float
+          "bool" -> :boolean
+          # For custom types like Company
+          _ -> :any
+        end
+
+      {String.to_atom(field_name), elixir_type}
+    end
   end
 
   defp prepare_opts(opts) do
