@@ -1,22 +1,29 @@
 # BamlElixir
 
-Call BAML functions from Elixir.
-Uses the BAML Rust NIF to call the BAML library.
+Call BAML functions from Elixir, using a Rust NIF.
+
+## First of all, can this be used in production?
+
+Well, I use it in production. But it's way too early for you if you expect stable APIs
+and things to not break at all. If you're okay with debugging issues with me when things go wrong,
+please go ahead!
 
 What this library does:
 
-- Call functions in BAML files.
+- Generates Elixir structs, types and functions from BAML files.
+- Gives you autocomplete and dialyzer type checking.
+- Parses BAML results into Elixir structs.
 - Switch between different LLM clients.
 - Get usage data using collectors.
 
 What this library does not do:
 
-- Code generation of Elixir `baml_client` from BAML files.
+- Generate Elixir `baml_client` files from BAML files. Codegen happens at compile time.
 - Automatically parse BAML results into Elixir structs.
 
 ## Usage
 
-First add a BAML file in the `priv` directory.
+Create a baml_src directory in priv and add a BAML file in there:
 
 ```baml
 client GPT4 {
@@ -53,50 +60,33 @@ function ExtractResume(resume: string) -> Resume {
 }
 ```
 
+Now create a BAML client module:
+
+```elixir
+defmodule MyApp.BamlClient do
+  use BamlElixir.Client, path: "priv/baml_src"
+end
+```
+
 Now call the BAML function:
 
 ```elixir
-BamlElixir.Client.call("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."}, %{
-  path: "priv/baml_src"
-})
+MyApp.BamlClient.ExtractResume.call(%{resume: "John Doe is the CTO of Acme Inc."})
 ```
 
 ### Stream results
 
 ```elixir
-BamlElixir.Client.stream!("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."}, %{
-  path: "priv/baml_src"
-})
-|> Enum.each(&IO.inspect/1)
-```
+MyApp.BamlClient.ExtractResume.stream(%{resume: "John Doe is the CTO of Acme Inc."}, fn
+  {:ok, result} ->
+    IO.inspect(result)
 
-#### Parsing results
+  {:error, error} ->
+    IO.inspect(error)
 
-If BAML returns a class type, you will get a map with keys as atoms and a special key `__baml_class__` with the BAML class name.
-
-Example:
-
-```elixir
-%{
-  __baml_class__: "Resume",
-  name: "John Doe",
-  job_title: "CTO",
-  company: %{
-    __baml_class__: "Company",
-    name: "Acme Inc."
-  }
-}
-```
-
-If BAML returns an enum type, you will get a map two special keys: `__baml_enum__` with the BAML enum name and `value` with the enum value.
-
-Example:
-
-```elixir
-%{
-  __baml_enum__: "Color",
-  value: "Red"
-}
+  :done ->
+    IO.inspect("Done")
+end)
 ```
 
 ### Images
@@ -104,21 +94,24 @@ Example:
 Send an image URL:
 
 ```elixir
-BamlElixir.Client.call("DescribeImage", %{
+MyApp.BamlClient.DescribeImage.call(%{
   myImg: %{
-    "url" => "https://upload.wikimedia.org/wikipedia/en/4/4d/Shrek_%28character%29.png"
+    url: "https://upload.wikimedia.org/wikipedia/en/4/4d/Shrek_%28character%29.png"
   }
 })
+|> IO.inspect()
 ```
 
 Or send base64 encoded image data:
 
 ```elixir
-BamlElixir.Client.call("DescribeImage", %{
+MyApp.BamlClient.DescribeImage.stream(%{
   myImg: %{
-    "base64" => "data:image/png;base64,..."
+    base64: "data:image/png;base64,..."
   }
-})
+}, fn result ->
+  IO.inspect(result)
+end)
 ```
 
 ### Collect usage data
@@ -126,25 +119,27 @@ BamlElixir.Client.call("DescribeImage", %{
 ```elixir
 collector = BamlElixir.Collector.new("my_collector")
 
-BamlElixir.Client.call("ExtractResume", %{resume: "John Doe is the CTO of Acme Inc."}, %{
+MyApp.BamlClient.ExtractResume.call(%{resume: "John Doe is the CTO of Acme Inc."}, %{
   collectors: [collector]
 })
 
 BamlElixir.Collector.usage(collector)
 ```
 
+When streaming, you can get the usage after :done message is received.
+
 ### Switch LLM clients
 
 From the existing list of LLM clients, you can switch to a different one by calling `Client.use_llm_client/2`.
 
 ```elixir
-BamlElixir.Client.call("WhichModel", %{}, %{
+MyApp.BamlClient.WhichModel.call(%{}, %{
   llm_client: "GPT4oMini"
 })
 |> IO.inspect()
 # => "gpt-4o-mini"
 
-BamlElixir.Client.call("WhichModel", %{}, %{
+MyApp.BamlClient.WhichModel.call(%{}, %{
   llm_client: "DeepSeekR1"
 })
 |> IO.inspect()
@@ -169,6 +164,12 @@ This also downloads the pre built NIFs for these targets:
 - x86_64-unknown-linux-gnu
 
 If you need to build the NIFs for other targets, you need to clone the repo and build it locally as documented below.
+
+### TODO
+
+- Type aliases
+- Dynamic types
+- Partial types for streaming
 
 ### Development
 

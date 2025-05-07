@@ -210,7 +210,7 @@ fn prepare_request<'a>(
     Ok((runtime, params, ctx, collectors, client_registry))
 }
 
-fn parse_function_result<'a>(env: Env<'a>, result: FunctionResult) -> NifResult<Term<'a>> {
+fn parse_function_result_call<'a>(env: Env<'a>, result: FunctionResult) -> NifResult<Term<'a>> {
     let parsed_value = result.parsed();
     match parsed_value {
         Some(Ok(response_baml_value)) => {
@@ -220,6 +220,30 @@ fn parse_function_result<'a>(env: Env<'a>, result: FunctionResult) -> NifResult<
         }
         Some(Err(e)) => Ok((atoms::error(), format!("{:?}", e)).encode(env)),
         None => Ok((atoms::error(), "No parsed value available").encode(env)),
+    }
+}
+
+fn parse_function_result_stream<'a>(
+    env: Env<'a>,
+    result: FunctionResult,
+) -> Result<Term<'a>, String> {
+    let parsed_value = result.parsed();
+    match parsed_value {
+        Some(Ok(response_baml_value)) => {
+            let baml_value = response_baml_value.0.clone().value();
+            let result_term = baml_value_to_term(env, &baml_value)
+                .map_err(|e| format!("Failed to convert BAML value to term: {:?}", e))?;
+            Ok(result_term)
+        }
+        Some(Err(e)) => {
+            // if the error contains "Incomplete", then return Err("incomplete")
+            if e.to_string().contains("Incomplete") {
+                Err("incomplete".to_string())
+            } else {
+                Err(format!("{:?}", e))
+            }
+        }
+        None => Err("No parsed value available".to_string()),
     }
 }
 
@@ -247,7 +271,7 @@ fn call<'a>(
 
     // Handle result
     match result {
-        Ok(function_result) => parse_function_result(env, function_result),
+        Ok(function_result) => parse_function_result_call(env, function_result),
         Err(e) => Ok((atoms::error(), format!("{:?}", e)).encode(env)),
     }
 }
@@ -256,6 +280,7 @@ fn call<'a>(
 fn stream<'a>(
     env: Env<'a>,
     pid: Term<'a>,
+    reference: Term<'a>,
     function_name: String,
     arguments: Term<'a>,
     path: String,
@@ -267,8 +292,23 @@ fn stream<'a>(
         prepare_request(arguments, path, collectors, client_registry)?;
 
     let on_event = |r: FunctionResult| {
-        let result_term = parse_function_result(env, r).unwrap();
-        let _ = env.send(&pid, result_term);
+        match parse_function_result_stream(env, r) {
+            Ok(result_term) => {
+                let wrapped_result = (reference, (atoms::ok(), result_term)).encode(env);
+                let _ = env.send(&pid, wrapped_result);
+            }
+            Err(error) => {
+                // When running some prompts, the parse fails first time, but succeeds later.
+                // So we just ignore the first error.
+                // Context on discord: https://discord.com/channels/1119368998161752075/1360503907679207566/1369672074267852903
+                if error == "incomplete" {
+                    // Do nothing for incomplete case
+                    return;
+                }
+                let wrapped_result = (reference, (atoms::error(), error)).encode(env);
+                let _ = env.send(&pid, wrapped_result);
+            }
+        }
     };
 
     let result = runtime.stream_function(

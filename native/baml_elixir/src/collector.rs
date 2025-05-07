@@ -2,14 +2,6 @@ use baml_runtime::tracingv2::storage::storage::Collector as BamlCollector;
 use rustler::{Encoder, Env, Resource, ResourceArc, Term};
 use std::sync::Arc;
 
-mod atoms {
-    rustler::atoms! {
-        ok,
-        error,
-        nil,
-    }
-}
-
 #[rustler::resource_impl()]
 impl Resource for CollectorResource {}
 
