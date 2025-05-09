@@ -153,7 +153,7 @@ Add baml_elixir to your mix.exs:
 ```elixir
 def deps do
   [
-    {:baml_elixir, "~> 1.0.0-pre.5"}
+    {:baml_elixir, "~> 1.0.0-pre.6"}
   ]
 end
 ```
