@@ -32,3 +32,4 @@ target/
 baml_client/
 baml_client.tmp
 /lib/baml_elixir/test.ex
+/priv

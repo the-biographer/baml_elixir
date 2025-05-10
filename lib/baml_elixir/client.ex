@@ -17,6 +17,7 @@ defmodule BamlElixir.Client do
 
   defmacro __using__(opts) do
     path = Keyword.get(opts, :path, "baml_src")
+    {path, _} = Code.eval_quoted(path, [], __CALLER__)
 
     # Get BAML types
     baml_types = BamlElixir.Native.parse_baml(path)
@@ -30,7 +31,6 @@ defmodule BamlElixir.Client do
       # Generate types
       generate_class_types(unquote(baml_class_types))
       generate_enum_types(unquote(baml_enum_types))
-      # generate_call_function_clauses(unquote(baml_functions), unquote(path))
       generate_function_modules(unquote(baml_functions), unquote(path))
     end
   end

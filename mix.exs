@@ -32,13 +32,21 @@ defmodule BamlElixir.MixProject do
   end
 
   defp package do
+    {output, 0} = System.cmd("git", ["ls-files", "lib"])
+
+    lib_files =
+      output
+      |> String.trim()
+      |> String.split("\n")
+
     [
-      files: [
-        "lib",
-        "checksum-*.exs",
-        "mix.exs",
-        "LICENSE"
-      ],
+      files:
+        lib_files ++
+          [
+            "checksum-*.exs",
+            "mix.exs",
+            "LICENSE"
+          ],
       licenses: ["Apache-2.0"],
       links: %{"GitHub" => "https://github.com/emilsoman/baml_elixir"},
       maintainers: ["Emil Soman"]
