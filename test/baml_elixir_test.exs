@@ -3,12 +3,12 @@ defmodule BamlElixirTest do
   use BamlElixir.Client, path: "test/baml_src"
   doctest BamlElixir
 
-  test "Parses into a struct" do
-    assert %BamlElixirTest.Person{name: "John Doe", age: 28} =
+  test "parses into a struct" do
+    assert {:ok, %BamlElixirTest.Person{name: "John Doe", age: 28}} =
              BamlElixirTest.ExtractPerson.call(%{info: "John Doe, 28, Engineer"})
   end
 
-  test "Parsing into a struct with streaming" do
+  test "parsing into a struct with streaming" do
     pid = self()
 
     BamlElixirTest.ExtractPerson.stream(%{info: "John Doe, 28, Engineer"}, fn result ->
@@ -25,9 +25,24 @@ defmodule BamlElixirTest do
            ]
   end
 
-  test "Change default model" do
-    assert BamlElixirTest.WhichModel.call(%{}, %{llm_client: "GPT4"}) == :GPT4oMini
-    assert BamlElixirTest.WhichModel.call(%{}, %{llm_client: "DeepSeekR1"}) == :DeepSeekR1
+  test "change default model" do
+    assert BamlElixirTest.WhichModel.call(%{}, %{llm_client: "GPT4"}) == {:ok, :GPT4oMini}
+    assert BamlElixirTest.WhichModel.call(%{}, %{llm_client: "DeepSeekR1"}) == {:ok, :DeepSeekR1}
+  end
+
+  test "Error when parsing the output of a function" do
+    assert {:error, "Failed to coerce value" <> _} = BamlElixirTest.DummyOutputFunction.call(%{})
+  end
+
+  test "get usage from collector" do
+    collector = BamlElixir.Collector.new("test-collector")
+
+    assert BamlElixirTest.WhichModel.call(%{}, %{llm_client: "GPT4", collectors: [collector]}) ==
+             {:ok, :GPT4oMini}
+
+    usage = BamlElixir.Collector.usage(collector)
+    assert usage["input_tokens"] == 33
+    assert usage["output_tokens"] > 0
   end
 
   defp wait_for_all_messages(messages \\ []) do

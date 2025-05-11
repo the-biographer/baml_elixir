@@ -61,11 +61,14 @@ defmodule BamlElixir.Client do
 
     with {:ok, result} <-
            BamlElixir.Native.call(function_name, args, path, collectors, client_registry) do
-      if opts[:parse] != false do
-        parse_result(result, opts[:prefix])
-      else
-        result
-      end
+      result =
+        if opts[:parse] != false do
+          parse_result(result, opts[:prefix])
+        else
+          result
+        end
+
+      {:ok, result}
     end
   end
 

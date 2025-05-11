@@ -7,13 +7,21 @@ client GPT4 {
     }
 }
 
-client<llm> DeepSeekR1 {
+client DeepSeekR1 {
   provider openai-generic
   options {
     base_url "https://api.together.ai/v1"
     api_key env.TOGETHER_API_KEY
     model "deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free"
   }
+}
+
+client Claude35Sonnet {
+    provider anthropic
+    options {
+        model claude-3-5-sonnet-latest
+        api_key env.ANTHROPIC_API_KEY
+    }
 }
 
 function ExtractPerson(info: string) -> Person {
@@ -52,4 +60,16 @@ function WhichModel() -> Model {
 
         {{ ctx.output_format }}
     "#
+}
+
+class DummyOutput {
+  nonce string
+  nonce2 string
+}
+
+function DummyOutputFunction() -> DummyOutput {
+  client GPT4
+  prompt #"
+    Say "hello there".
+  "#
 }
