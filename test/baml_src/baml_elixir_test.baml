@@ -73,3 +73,18 @@ function DummyOutputFunction() -> DummyOutput {
     Say "hello there".
   "#
 }
+
+class Attendees {
+  hosts Person[]
+  guests Person[]
+}
+
+function ParseAttendees(attendees: string) -> Attendees {
+  client GPT4
+  prompt #"
+    {{ ctx.output_format }}
+
+    Parse the following string into an Attendees struct:
+    {{ attendees }}
+  "#
+}

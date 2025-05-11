@@ -45,6 +45,31 @@ defmodule BamlElixirTest do
     assert usage["output_tokens"] > 0
   end
 
+  test "parsing of nested structs" do
+    attendees = %BamlElixirTest.Attendees{
+      hosts: [
+        %BamlElixirTest.Person{name: "John Doe", age: 28},
+        %BamlElixirTest.Person{name: "Bob Johnson", age: 35}
+      ],
+      guests: [
+        %BamlElixirTest.Person{name: "Alice Smith", age: 25},
+        %BamlElixirTest.Person{name: "Carol Brown", age: 30},
+        %BamlElixirTest.Person{name: "Jane Doe", age: 28}
+      ]
+    }
+
+    assert {:ok, attendees} ==
+             BamlElixirTest.ParseAttendees.call(%{
+               attendees: """
+               John Doe 28 - Host
+               Alice Smith 25 - Guest
+               Bob Johnson 35 - Host
+               Carol Brown 30 - Guest
+               Jane Doe 28 - Guest
+               """
+             })
+  end
+
   defp wait_for_all_messages(messages \\ []) do
     receive do
       {:partial, _} = message ->

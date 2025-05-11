@@ -349,6 +349,10 @@ defmodule BamlElixir.Client do
     String.to_atom(value)
   end
 
+  defp parse_result(list, prefix) when is_list(list) do
+    Enum.map(list, fn item -> parse_result(item, prefix) end)
+  end
+
   defp parse_result(result, _prefix) do
     result
   end
