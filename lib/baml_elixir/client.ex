@@ -57,6 +57,7 @@ defmodule BamlElixir.Client do
           {:ok, term()} | {:error, String.t()}
   def call(function_name, args, opts \\ %{}) do
     {path, collectors, client_registry} = prepare_opts(opts)
+    args = to_map(args)
 
     with {:ok, result} <-
            BamlElixir.Native.call(function_name, args, path, collectors, client_registry) do
@@ -83,6 +84,7 @@ defmodule BamlElixir.Client do
   """
   def stream(function_name, args, callback, opts \\ %{}) do
     ref = make_ref()
+    args = to_map(args)
 
     spawn_link(fn ->
       start_sync_stream(self(), ref, function_name, args, opts)
@@ -111,7 +113,7 @@ defmodule BamlElixir.Client do
 
   defp handle_stream_result(ref, callback, opts) do
     receive do
-      {^ref, {:ok, result}} ->
+      {^ref, {:partial, result}} ->
         result =
           if opts[:parse] != false do
             parse_result(result, opts[:prefix])
@@ -119,17 +121,21 @@ defmodule BamlElixir.Client do
             result
           end
 
-        callback.({:ok, result})
+        callback.({:partial, result})
         handle_stream_result(ref, callback, opts)
 
       {^ref, {:error, _} = msg} ->
         callback.(msg)
 
-      {^ref, :done} ->
-        callback.(:done)
+      {^ref, {:done, result}} ->
+        result =
+          if opts[:parse] != false do
+            parse_result(result, opts[:prefix])
+          else
+            result
+          end
 
-      other ->
-        IO.inspect(other, label: "Stream unhandled message")
+        callback.({:done, result})
     end
   end
 
@@ -342,5 +348,23 @@ defmodule BamlElixir.Client do
 
   defp parse_result(result, _prefix) do
     result
+  end
+
+  defp to_map(args) when is_struct(args) do
+    args
+    |> Map.from_struct()
+    |> to_map()
+  end
+
+  defp to_map(args) when is_map(args) do
+    Map.new(args, fn {key, value} -> {key, to_map(value)} end)
+  end
+
+  defp to_map(args) when is_list(args) do
+    Enum.map(args, &to_map/1)
+  end
+
+  defp to_map(args) do
+    args
   end
 end

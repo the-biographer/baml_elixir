@@ -14,6 +14,7 @@ mod atoms {
         ok,
         error,
         nil,
+        partial,
         done,
     }
 }
@@ -66,7 +67,10 @@ fn term_to_baml_value<'a>(term: Term<'a>) -> Result<BamlValue, Error> {
         return Ok(BamlValue::Null);
     }
 
-    Err(Error::Term(Box::new("Unsupported type")))
+    Err(Error::Term(Box::new(format!(
+        "Unsupported type: {:?}",
+        term
+    ))))
 }
 
 fn baml_value_to_term<'a>(env: Env<'a>, value: &BamlValue) -> NifResult<Term<'a>> {
@@ -235,14 +239,7 @@ fn parse_function_result_stream<'a>(
                 .map_err(|e| format!("Failed to convert BAML value to term: {:?}", e))?;
             Ok(result_term)
         }
-        Some(Err(e)) => {
-            // if the error contains "Incomplete", then return Err("incomplete")
-            if e.to_string().contains("Incomplete") {
-                Err("incomplete".to_string())
-            } else {
-                Err(format!("{:?}", e))
-            }
-        }
+        Some(Err(e)) => Err(e.to_string()),
         None => Err("No parsed value available".to_string()),
     }
 }
@@ -294,19 +291,15 @@ fn stream<'a>(
     let on_event = |r: FunctionResult| {
         match parse_function_result_stream(env, r) {
             Ok(result_term) => {
-                let wrapped_result = (reference, (atoms::ok(), result_term)).encode(env);
+                let wrapped_result = (reference, (atoms::partial(), result_term)).encode(env);
                 let _ = env.send(&pid, wrapped_result);
             }
-            Err(error) => {
-                // When running some prompts, the parse fails first time, but succeeds later.
-                // So we just ignore the first error.
-                // Context on discord: https://discord.com/channels/1119368998161752075/1360503907679207566/1369672074267852903
-                if error == "incomplete" {
-                    // Do nothing for incomplete case
-                    return;
-                }
-                let wrapped_result = (reference, (atoms::error(), error)).encode(env);
-                let _ = env.send(&pid, wrapped_result);
+            Err(_) => {
+                // Do nothing on error because this can happen when
+                // the result cannot be coerced to a BAML value.
+                // This can happen when the result is incomplete.
+                // We'll get the final result and check for a real error then.
+                return;
             }
         }
     };
@@ -324,7 +317,15 @@ fn stream<'a>(
         Ok(mut stream) => {
             let (result, _trace_id) = stream.run_sync(Some(on_event), &ctx, None, None);
             match result {
-                Ok(_) => Ok(atoms::done().encode(env)),
+                Ok(r) => match r.parsed() {
+                    Some(Ok(result)) => {
+                        let baml_value = result.0.clone().value();
+                        let result_term = baml_value_to_term(env, &baml_value)?;
+                        Ok((atoms::done(), result_term).encode(env))
+                    }
+                    Some(Err(e)) => Ok((atoms::error(), format!("{:?}", e)).encode(env)),
+                    None => Ok((atoms::error(), "No parsed value available").encode(env)),
+                },
                 Err(e) => Ok((atoms::error(), format!("{:?}", e)).encode(env)),
             }
         }
