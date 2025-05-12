@@ -1,7 +1,7 @@
 defmodule BamlElixir.MixProject do
   use Mix.Project
 
-  @version "1.0.0-pre.10"
+  @version "1.0.0-pre.11"
 
   def project do
     [
@@ -32,21 +32,13 @@ defmodule BamlElixir.MixProject do
   end
 
   defp package do
-    {output, 0} = System.cmd("git", ["ls-files", "lib"])
-
-    lib_files =
-      output
-      |> String.trim()
-      |> String.split("\n")
-
     [
-      files:
-        lib_files ++
-          [
-            "checksum-*.exs",
-            "mix.exs",
-            "LICENSE"
-          ],
+      files: [
+        "lib",
+        "checksum-*.exs",
+        "mix.exs",
+        "LICENSE"
+      ],
       licenses: ["Apache-2.0"],
       links: %{"GitHub" => "https://github.com/emilsoman/baml_elixir"},
       maintainers: ["Emil Soman"]

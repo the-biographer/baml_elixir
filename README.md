@@ -64,7 +64,7 @@ Now create a BAML client module:
 
 ```elixir
 defmodule MyApp.BamlClient do
-  use BamlElixir.Client, path: "priv/baml_src"
+  use BamlElixir.Client, path: Application.app_dir(:my_app, "priv/baml_src")
 end
 ```
 
@@ -153,7 +153,7 @@ Add baml_elixir to your mix.exs:
 ```elixir
 def deps do
   [
-    {:baml_elixir, "~> 1.0.0-pre.10"}
+    {:baml_elixir, "~> 1.0.0-pre.11"}
   ]
 end
 ```
