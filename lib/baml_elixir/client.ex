@@ -25,13 +25,16 @@ defmodule BamlElixir.Client do
     baml_enum_types = baml_types[:enums]
     baml_functions = baml_types[:functions]
 
+    baml_class_types_quoted = generate_class_types(baml_class_types, __CALLER__)
+    baml_enum_types_quoted = generate_enum_types(baml_enum_types, __CALLER__)
+    baml_functions_quoted = generate_function_modules(baml_functions, path, __CALLER__)
+
     quote do
       import BamlElixir.Client
 
-      # Generate types
-      generate_class_types(unquote(baml_class_types))
-      generate_enum_types(unquote(baml_enum_types))
-      generate_function_modules(unquote(baml_functions), unquote(path))
+      unquote(baml_class_types_quoted)
+      unquote(baml_enum_types_quoted)
+      unquote(baml_functions_quoted)
     end
   end
 
@@ -144,12 +147,12 @@ defmodule BamlElixir.Client do
 
   # Every class in the BAML source file is converted to an Elixir module
   # with a `defstruct/1` and a `@type t/0` type.
-  defmacro generate_class_types(class_types) do
-    module = __CALLER__.module
+  defp generate_class_types(class_types, caller) do
+    module = caller.module
 
     for {type_name, fields} <- class_types do
       field_names = get_field_names(fields)
-      field_types = get_field_types(fields, __CALLER__)
+      field_types = get_field_types(fields, caller)
       module_name = Module.concat([module, type_name])
 
       quote do
@@ -163,8 +166,8 @@ defmodule BamlElixir.Client do
 
   # Every enum in the BAML source file is converted to an Elixir module
   # with a `@type t/0` type.
-  defmacro generate_enum_types(enum_types) do
-    module = __CALLER__.module
+  defp generate_enum_types(enum_types, caller) do
+    module = caller.module
 
     for {enum_name, variants} <- enum_types do
       variant_atoms = Enum.map(variants, &String.to_atom/1)
@@ -185,18 +188,18 @@ defmodule BamlElixir.Client do
 
   # Every function in the BAML source file is converted to an Elixir module
   # which has a `call/2` function and a `stream/3` function.
-  defmacro generate_function_modules(functions, path) do
-    module = __CALLER__.module
+  defp generate_function_modules(functions, path, caller) do
+    module = caller.module
 
     for {function_name, function_info} <- functions do
       module_name = Module.concat(module, function_name)
 
       param_types =
         for {param_name, param_type} <- function_info["params"] do
-          {String.to_atom(param_name), to_elixir_type(param_type, __CALLER__)}
+          {String.to_atom(param_name), to_elixir_type(param_type, caller)}
         end
 
-      return_type = to_elixir_type(function_info["return_type"], __CALLER__)
+      return_type = to_elixir_type(function_info["return_type"], caller)
 
       quote do
         defmodule unquote(module_name) do
