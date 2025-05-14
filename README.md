@@ -78,14 +78,14 @@ MyApp.BamlClient.ExtractResume.call(%{resume: "John Doe is the CTO of Acme Inc."
 
 ```elixir
 MyApp.BamlClient.ExtractResume.stream(%{resume: "John Doe is the CTO of Acme Inc."}, fn
-  {:ok, result} ->
+  {:partial, result} ->
+    IO.inspect(result)
+
+  {:done, result} ->
     IO.inspect(result)
 
   {:error, error} ->
     IO.inspect(error)
-
-  :done ->
-    IO.inspect("Done")
 end)
 ```
 
