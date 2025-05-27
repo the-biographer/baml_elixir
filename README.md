@@ -64,7 +64,8 @@ Now create a BAML client module:
 
 ```elixir
 defmodule MyApp.BamlClient do
-  use BamlElixir.Client, path: Application.app_dir(:my_app, "priv/baml_src")
+  # {:my_app, "priv/baml_src"} Will be expanded to Application.app_dir(:my_app, "priv/baml_src")
+  use BamlElixir.Client, path: {:my_app, "priv/baml_src"}
 end
 ```
 

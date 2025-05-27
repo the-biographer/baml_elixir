@@ -17,10 +17,10 @@ defmodule BamlElixir.Client do
 
   defmacro __using__(opts) do
     path = Keyword.get(opts, :path, "baml_src")
-    {path, _} = Code.eval_quoted(path, [], __CALLER__)
+    {baml_src_path, _} = Code.eval_quoted(app_path(path), [], __CALLER__)
 
     # Get BAML types
-    baml_types = BamlElixir.Native.parse_baml(path)
+    baml_types = BamlElixir.Native.parse_baml(baml_src_path)
     baml_class_types = baml_types[:classes]
     baml_enum_types = baml_types[:enums]
     baml_functions = baml_types[:functions]
@@ -96,6 +96,16 @@ defmodule BamlElixir.Client do
       start_sync_stream(self(), ref, function_name, args, opts)
       handle_stream_result(ref, callback, opts)
     end)
+  end
+
+  def app_path(path) do
+    case path do
+      {app, path} ->
+        Application.app_dir(app, path)
+
+      _ ->
+        path
+    end
   end
 
   defp start_sync_stream(pid, ref, function_name, args, opts) do
@@ -208,7 +218,7 @@ defmodule BamlElixir.Client do
           def call(args, opts \\ %{}) do
             opts =
               opts
-              |> Map.put(:path, unquote(path))
+              |> Map.put(:path, BamlElixir.Client.app_path(unquote(path)))
               |> Map.put(:prefix, unquote(module))
 
             BamlElixir.Client.call(unquote(function_name), args, opts)
@@ -223,7 +233,7 @@ defmodule BamlElixir.Client do
           def stream(args, callback, opts \\ %{}) do
             opts =
               opts
-              |> Map.put(:path, unquote(path))
+              |> Map.put(:path, BamlElixir.Client.app_path(unquote(path)))
               |> Map.put(:prefix, unquote(module))
 
             BamlElixir.Client.stream(unquote(function_name), args, callback, opts)
