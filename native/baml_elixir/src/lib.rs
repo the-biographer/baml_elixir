@@ -264,6 +264,7 @@ fn call<'a>(
         None,                     // type builder (optional)
         client_registry.as_ref(), // client registry (optional)
         collectors,
+        std::env::vars().collect(),
     );
 
     // Handle result
@@ -311,11 +312,13 @@ fn stream<'a>(
         None,
         client_registry.as_ref(),
         collectors,
+        std::env::vars().collect(),
     );
 
     match result {
         Ok(mut stream) => {
-            let (result, _trace_id) = stream.run_sync(Some(on_event), &ctx, None, None);
+            let (result, _trace_id) =
+                stream.run_sync(Some(on_event), &ctx, None, None, std::env::vars().collect());
             match result {
                 Ok(r) => match r.parsed() {
                     Some(Ok(result)) => {
@@ -353,7 +356,7 @@ fn parse_baml(env: Env, path: Option<String>) -> NifResult<Term> {
         Err(e) => return Err(Error::Term(Box::new(e.to_string()))),
     };
 
-    let ir = runtime.inner.ir;
+    let ir = runtime.inner.ir.clone();
 
     // Create a map of the classes and their fields along with their types
     let mut class_fields = HashMap::new();
