@@ -2,7 +2,7 @@ use baml_runtime::client_registry::ClientRegistry;
 use baml_runtime::tracingv2::storage::storage::Collector;
 use baml_runtime::{BamlRuntime, FunctionResult, RuntimeContextManager};
 use baml_types::{BamlMap, BamlValue, FieldType, LiteralValue};
-use collector::Usage;
+use collector::{FunctionLog, Usage};
 use rustler::{
     Encoder, Env, Error, LocalPid, MapIterator, NifResult, NifStruct, ResourceArc, Term,
 };
@@ -344,6 +344,13 @@ fn collector_new(name: Option<String>) -> ResourceArc<collector::CollectorResour
 #[rustler::nif]
 fn collector_usage(collector: ResourceArc<collector::CollectorResource>) -> Usage {
     collector.usage()
+}
+
+#[rustler::nif]
+fn collector_last_function_log(
+    collector: ResourceArc<collector::CollectorResource>,
+) -> Option<FunctionLog> {
+    collector.last_function_log()
 }
 
 #[rustler::nif]

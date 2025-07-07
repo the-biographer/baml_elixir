@@ -9,4 +9,8 @@ defmodule BamlElixir.Collector do
   def usage(%__MODULE__{reference: reference}) when is_reference(reference) do
     BamlElixir.Native.collector_usage(reference)
   end
+
+  def last_function_log(%__MODULE__{reference: reference}) when is_reference(reference) do
+    BamlElixir.Native.collector_last_function_log(reference)
+  end
 end

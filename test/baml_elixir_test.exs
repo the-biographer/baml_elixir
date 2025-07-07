@@ -45,6 +45,38 @@ defmodule BamlElixirTest do
     assert usage["output_tokens"] > 0
   end
 
+  test "get last function log from collector" do
+    collector = BamlElixir.Collector.new("test-collector")
+
+    assert BamlElixirTest.WhichModel.call(%{}, %{llm_client: "GPT4", collectors: [collector]}) ==
+             {:ok, :GPT4oMini}
+
+    last_function_log = BamlElixir.Collector.last_function_log(collector)
+    assert last_function_log["function_name"] == "WhichModel"
+
+    response_body =
+      last_function_log["calls"]
+      |> Enum.at(0)
+      |> Map.get("response")
+      |> Map.get("body")
+      |> Jason.decode!()
+
+    assert response_body["usage"]["prompt_tokens_details"] == %{
+             "audio_tokens" => 0,
+             "cached_tokens" => 0
+           }
+
+    assert Map.keys(last_function_log) == [
+             "calls",
+             "function_name",
+             "id",
+             "log_type",
+             "raw_llm_response",
+             "timing",
+             "usage"
+           ]
+  end
+
   test "parsing of nested structs" do
     attendees = %BamlElixirTest.Attendees{
       hosts: [
