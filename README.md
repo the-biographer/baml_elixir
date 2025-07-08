@@ -147,6 +147,34 @@ MyApp.BamlClient.WhichModel.call(%{}, %{
 # => "deepseek-r1"
 ```
 
+### Type builder
+
+You can provide a type builder to the client. This is a list of tuples in the format `{:class, "Person", [%{name: "name", type: "string"}, %{name: "age", type: "int"}]}`
+
+Given this BAML file:
+
+```baml
+class NewEmployee {
+    employee_id string
+    @@dynamic // allows adding fields dynamically at runtime
+}
+```
+
+```elixir
+
+MyApp.BamlClient.CreateEmployee.call(%{}, %{
+  tb: [
+    {:class, "TestPerson", [%{name: "name", type: "string"}, %{name: "age", type: "int"}]},
+    {:class, "NewEmployee", [%{name: "person", type: "TestPerson"}]}
+  ]
+})
+
+# Returns:
+{:ok, %{__baml_class__: "NewEmployee", employee_id: "EMP123456", person: %{name: "John Doe", age: 34, __baml_class__: "TestPerson"}}}
+```
+
+Note: Classes with dynamic fields are not parsed into structs, they return a map with a `__baml_class__` key which can be used for pattern matching.
+
 ## Installation
 
 Add baml_elixir to your mix.exs:
@@ -169,8 +197,7 @@ If you need to build the NIFs for other targets, you need to clone the repo and 
 ### TODO
 
 - Type aliases
-- Dynamic types
-- Partial types for streaming
+- Dynamic types (WIP, works partially)
 
 ### Development
 
