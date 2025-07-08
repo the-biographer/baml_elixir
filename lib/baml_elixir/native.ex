@@ -11,10 +11,10 @@ defmodule BamlElixir.Native do
       "x86_64-unknown-linux-gnu"
     ]
 
-  def call(_function_name, _args, _path, _collectors, _client_registry),
+  def call(_function_name, _args, _path, _collectors, _client_registry, _tb),
     do: :erlang.nif_error(:nif_not_loaded)
 
-  def stream(_pid, _reference, _function_name, _args, _path, _collectors, _client_registry),
+  def stream(_pid, _reference, _function_name, _args, _path, _collectors, _client_registry, _tb),
     do: :erlang.nif_error(:nif_not_loaded)
 
   def collector_new(_name), do: :erlang.nif_error(:nif_not_loaded)

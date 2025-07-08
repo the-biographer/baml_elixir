@@ -25,6 +25,22 @@ defmodule BamlElixirTest do
            ]
   end
 
+  test "parses into a struct with a type builder" do
+    assert {:ok,
+            %{
+              __baml_class__: "NewEmployee",
+              employee_id: _,
+              person: %{name: _, age: _, __baml_class__: "TestPerson"}
+            }} =
+             BamlElixirTest.CreateEmployee.call(%{}, %{
+               tb: [
+                 {:class, "TestPerson",
+                  [%{"name" => "name", "type" => "string"}, %{"name" => "age", "type" => "int"}]},
+                 {:class, "NewEmployee", [%{"name" => "person", "type" => "TestPerson"}]}
+               ]
+             })
+  end
+
   test "change default model" do
     assert BamlElixirTest.WhichModel.call(%{}, %{llm_client: "GPT4"}) == {:ok, :GPT4oMini}
     assert BamlElixirTest.WhichModel.call(%{}, %{llm_client: "DeepSeekR1"}) == {:ok, :DeepSeekR1}

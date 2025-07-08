@@ -59,14 +59,14 @@ defmodule BamlElixir.Client do
   @spec call(String.t(), map(), map()) ::
           {:ok, term()} | {:error, String.t()}
   def call(function_name, args, opts \\ %{}) do
-    {path, collectors, client_registry} = prepare_opts(opts)
+    {path, collectors, client_registry, tb} = prepare_opts(opts)
     args = to_map(args)
 
     with {:ok, result} <-
-           BamlElixir.Native.call(function_name, args, path, collectors, client_registry) do
+           BamlElixir.Native.call(function_name, args, path, collectors, client_registry, tb) do
       result =
         if opts[:parse] != false do
-          parse_result(result, opts[:prefix])
+          parse_result(result, opts[:prefix], tb)
         else
           result
         end
@@ -109,7 +109,7 @@ defmodule BamlElixir.Client do
   end
 
   defp start_sync_stream(pid, ref, function_name, args, opts) do
-    {path, collectors, client_registry} = prepare_opts(opts)
+    {path, collectors, client_registry, tb} = prepare_opts(opts)
 
     spawn_link(fn ->
       result =
@@ -120,7 +120,8 @@ defmodule BamlElixir.Client do
           args,
           path,
           collectors,
-          client_registry
+          client_registry,
+          tb
         )
 
       send(pid, {ref, result})
@@ -132,7 +133,7 @@ defmodule BamlElixir.Client do
       {^ref, {:partial, result}} ->
         result =
           if opts[:parse] != false do
-            parse_result(result, opts[:prefix])
+            parse_result(result, opts[:prefix], opts[:tb])
           else
             result
           end
@@ -146,7 +147,7 @@ defmodule BamlElixir.Client do
       {^ref, {:done, result}} ->
         result =
           if opts[:parse] != false do
-            parse_result(result, opts[:prefix])
+            parse_result(result, opts[:prefix], opts[:tb])
           else
             result
           end
@@ -160,7 +161,7 @@ defmodule BamlElixir.Client do
   defp generate_class_types(class_types, caller) do
     module = caller.module
 
-    for {type_name, fields} <- class_types do
+    for {type_name, %{"fields" => fields, "dynamic" => dynamic}} <- class_types do
       field_names = get_field_names(fields)
       field_types = get_field_types(fields, caller)
       module_name = Module.concat([module, type_name])
@@ -169,6 +170,10 @@ defmodule BamlElixir.Client do
         defmodule unquote(module_name) do
           defstruct unquote(field_names)
           @type t :: %__MODULE__{unquote_splicing(field_types)}
+
+          def name, do: unquote(type_name)
+          def type, do: :class
+          def dynamic?, do: unquote(dynamic)
         end
       end
     end
@@ -191,6 +196,10 @@ defmodule BamlElixir.Client do
       quote do
         defmodule unquote(module_name) do
           @type t :: unquote(union_type)
+
+          def name, do: unquote(enum_name)
+          def values, do: unquote(variant_atoms)
+          def type, do: :enum
         end
       end
     end
@@ -349,24 +358,40 @@ defmodule BamlElixir.Client do
     path = opts[:path] || "baml_src"
     collectors = (opts[:collectors] || []) |> Enum.map(fn collector -> collector.reference end)
     client_registry = opts[:llm_client] && %{primary: opts[:llm_client]}
-    {path, collectors, client_registry}
+    tb = prepare_type_builder(opts[:tb])
+    {path, collectors, client_registry, tb}
   end
 
-  defp parse_result(%{:__baml_class__ => class_name} = result, prefix) do
+  defp prepare_type_builder(tb) do
+    case tb do
+      [_ | _] ->
+        tb
+
+      _ ->
+        nil
+    end
+  end
+
+  # If type builder is provided, return as map instead of struct
+  defp parse_result(%{:__baml_class__ => _class_name} = result, _prefix, [_ | _]) do
+    result
+  end
+
+  defp parse_result(%{:__baml_class__ => class_name} = result, prefix, tb) do
     module = Module.concat(prefix, class_name)
-    values = Enum.map(result, fn {key, value} -> {key, parse_result(value, prefix)} end)
+    values = Enum.map(result, fn {key, value} -> {key, parse_result(value, prefix, tb)} end)
     struct(module, values)
   end
 
-  defp parse_result(%{:__baml_enum__ => _, :value => value}, _prefix) do
+  defp parse_result(%{:__baml_enum__ => _, :value => value}, _prefix, _tb) do
     String.to_atom(value)
   end
 
-  defp parse_result(list, prefix) when is_list(list) do
-    Enum.map(list, fn item -> parse_result(item, prefix) end)
+  defp parse_result(list, prefix, tb) when is_list(list) do
+    Enum.map(list, fn item -> parse_result(item, prefix, tb) end)
   end
 
-  defp parse_result(result, _prefix) do
+  defp parse_result(result, _prefix, _tb) do
     result
   end
 

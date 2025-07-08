@@ -53,6 +53,24 @@ enum Model {
   GPT4oMini
 }
 
+class MyClass {
+  property1 string
+  property2 int?
+  @@dynamic // allows adding fields dynamically at runtime
+}
+
+class NewEmployee {
+  employee_id string
+}
+
+function CreateEmployee() -> NewEmployee {
+  client GPT4
+  prompt #"
+    Create a fake employee data with the following information:
+    {{ ctx.output_format }}
+  "#
+}
+
 function WhichModel() -> Model {
     client GPT4
     prompt #"

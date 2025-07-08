@@ -1,10 +1,12 @@
 use baml_runtime::client_registry::ClientRegistry;
 use baml_runtime::tracingv2::storage::storage::Collector;
+use baml_runtime::type_builder::TypeBuilder;
 use baml_runtime::{BamlRuntime, FunctionResult, RuntimeContextManager};
 use baml_types::{BamlMap, BamlValue, FieldType, LiteralValue};
 use collector::{FunctionLog, Usage};
 use rustler::{
-    Encoder, Env, Error, LocalPid, MapIterator, NifResult, NifStruct, ResourceArc, Term,
+    Encoder, Env, Error, ListIterator, LocalPid, MapIterator, NifResult, NifStruct, ResourceArc,
+    Term,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -149,6 +151,7 @@ fn prepare_request<'a>(
     path: String,
     collectors: Vec<ResourceArc<collector::CollectorResource>>,
     client_registry: Term<'a>,
+    tb_elixir: Term<'a>,
 ) -> Result<
     (
         BamlRuntime,
@@ -156,6 +159,7 @@ fn prepare_request<'a>(
         RuntimeContextManager,
         Option<Vec<Arc<Collector>>>,
         Option<ClientRegistry>,
+        Option<TypeBuilder>,
     ),
     Error,
 > {
@@ -211,7 +215,68 @@ fn prepare_request<'a>(
         )));
     };
 
-    Ok((runtime, params, ctx, collectors, client_registry))
+    let tb = if tb_elixir.is_list() {
+        let builder = TypeBuilder::new();
+
+        let iter: ListIterator = tb_elixir.decode()?;
+
+        // Iterate over each item in the list
+        for item_term in iter {
+            // Each item is a tuple in the format {:class, "Person", fields}
+            // We need to decode it as a tuple
+            if let Ok((kind, name, fields)) =
+                item_term.decode::<(rustler::Atom, String, Vec<Term>)>()
+            {
+                let env = item_term.get_env();
+                let class_atom = rustler::Atom::from_str(env, "class")
+                    .map_err(|_| Error::Term(Box::new("Failed to create atom")))?;
+
+                if kind == class_atom {
+                    let cls = builder.class(&name);
+                    let cls = cls.lock().unwrap();
+
+                    // Iterate over the fields list
+                    for field_term in fields {
+                        // Each field is a map with name, type, description
+                        if field_term.is_map() {
+                            let field_iter = MapIterator::new(field_term)
+                                .ok_or(Error::Term(Box::new("Invalid field map")))?;
+
+                            let mut field_name = String::new();
+                            let mut field_type = String::new();
+
+                            for (key_term, value_term) in field_iter {
+                                let key = term_to_string(key_term)?;
+                                match key.as_str() {
+                                    "name" => field_name = term_to_string(value_term)?,
+                                    "type" => field_type = term_to_string(value_term)?,
+                                    _ => {} // Ignore other fields like description
+                                }
+                            }
+
+                            // Set the field type based on the string type
+                            let property = cls.property(&field_name);
+                            let property = property.lock().unwrap();
+                            match field_type.as_str() {
+                                "string" => property.r#type(FieldType::string()),
+                                "int" => property.r#type(FieldType::int()),
+                                "float" => property.r#type(FieldType::float()),
+                                "bool" => property.r#type(FieldType::bool()),
+                                // TODO: handle other types and metadata as well.
+                                _ => property.r#type(FieldType::class(&field_type)),
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
+        Some(builder)
+    } else {
+        None
+    };
+
+    Ok((runtime, params, ctx, collectors, client_registry, tb))
 }
 
 fn parse_function_result_call<'a>(env: Env<'a>, result: FunctionResult) -> NifResult<Term<'a>> {
@@ -252,16 +317,17 @@ fn call<'a>(
     path: String,
     collectors: Vec<ResourceArc<collector::CollectorResource>>,
     client_registry: Term<'a>,
+    tb: Term<'a>,
 ) -> NifResult<Term<'a>> {
-    let (runtime, params, ctx, collectors, client_registry) =
-        prepare_request(arguments, path, collectors, client_registry)?;
+    let (runtime, params, ctx, collectors, client_registry, tb) =
+        prepare_request(arguments, path, collectors, client_registry, tb)?;
 
     // Call function synchronously
     let (result, _trace_id) = runtime.call_function_sync(
         function_name,
         &params,
         &ctx,
-        None,                     // type builder (optional)
+        tb.as_ref(),              // type builder (optional)
         client_registry.as_ref(), // client registry (optional)
         collectors,
         std::env::vars().collect(),
@@ -284,10 +350,11 @@ fn stream<'a>(
     path: String,
     collectors: Vec<ResourceArc<collector::CollectorResource>>,
     client_registry: Term<'a>,
+    tb: Term<'a>,
 ) -> NifResult<Term<'a>> {
     let pid = pid.decode::<LocalPid>()?;
-    let (runtime, params, ctx, collectors, client_registry) =
-        prepare_request(arguments, path, collectors, client_registry)?;
+    let (runtime, params, ctx, collectors, client_registry, tb) =
+        prepare_request(arguments, path, collectors, client_registry, tb)?;
 
     let on_event = |r: FunctionResult| {
         match parse_function_result_stream(env, r) {
@@ -309,7 +376,7 @@ fn stream<'a>(
         function_name,
         &params,
         &ctx,
-        None,
+        tb.as_ref(),
         client_registry.as_ref(),
         collectors,
         std::env::vars().collect(),
@@ -367,6 +434,7 @@ fn parse_baml(env: Env, path: Option<String>) -> NifResult<Term> {
 
     // Create a map of the classes and their fields along with their types
     let mut class_fields = HashMap::new();
+    let mut class_attributes = HashMap::new();
     for class in ir.walk_classes() {
         let mut fields = HashMap::new();
         for field in class.walk_fields() {
@@ -374,6 +442,10 @@ fn parse_baml(env: Env, path: Option<String>) -> NifResult<Term> {
             fields.insert(field.name().to_string(), field_type);
         }
         class_fields.insert(class.name().to_string(), fields);
+
+        // Check if class has @@dynamic attribute
+        let is_dynamic = class.item.attributes.get("dynamic_type").is_some();
+        class_attributes.insert(class.name().to_string(), is_dynamic);
     }
 
     // Create a map of the enums and their variants
@@ -409,11 +481,20 @@ fn parse_baml(env: Env, path: Option<String>) -> NifResult<Term> {
     // Add classes
     let mut classes_map = Term::map_new(env);
     for (class_name, fields) in class_fields {
+        let mut class_map = Term::map_new(env);
+
+        // Add fields
         let mut field_map = Term::map_new(env);
         for (field_name, field_type) in fields {
             field_map = field_map.map_put(field_name.encode(env), field_type)?;
         }
-        classes_map = classes_map.map_put(class_name.encode(env), field_map)?;
+        class_map = class_map.map_put("fields".encode(env), field_map)?;
+
+        // Add dynamic attribute
+        let is_dynamic = class_attributes.get(&class_name).unwrap_or(&false);
+        class_map = class_map.map_put("dynamic".encode(env), is_dynamic.encode(env))?;
+
+        classes_map = classes_map.map_put(class_name.encode(env), class_map)?;
     }
     map = map.map_put(
         rustler::Atom::from_str(env, "classes").unwrap().encode(env),
