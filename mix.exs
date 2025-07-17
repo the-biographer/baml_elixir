@@ -8,7 +8,7 @@ defmodule BamlElixir.MixProject do
       app: :baml_elixir,
       description: "Call BAML functions from Elixir.",
       version: @version,
-      elixir: "~> 1.17",
+      elixir: "~> 1.18.4",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       package: package()
