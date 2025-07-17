@@ -1,14 +1,14 @@
 defmodule BamlElixir.MixProject do
   use Mix.Project
 
-  @version "1.0.0-pre.15"
+  @version "1.0.0-pre.16"
 
   def project do
     [
       app: :baml_elixir,
       description: "Call BAML functions from Elixir.",
       version: @version,
-      elixir: "~> 1.17",
+      elixir: "~> 1.18.4",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       package: package()
