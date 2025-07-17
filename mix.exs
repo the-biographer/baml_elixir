@@ -35,6 +35,7 @@ defmodule BamlElixir.MixProject do
     [
       files: [
         "lib",
+        "native",
         "checksum-*.exs",
         "mix.exs",
         "LICENSE"
